@@ -19,18 +19,24 @@ const VercelApiKeyInstructions: React.FC = () => (
         <strong>Go to Project Settings:</strong> Navigate to your project and click the <strong className="text-brand-primary">Settings</strong> tab, then select <strong className="text-brand-primary">Environment Variables</strong>.
       </li>
       <li>
-        <strong>Check Variable Name:</strong> Create a variable with the exact name <code className="bg-gray-900 px-2 py-1 rounded text-brand-secondary">API_KEY</code>.
+        <strong>Set Variable Name:</strong> Create a variable with the exact name <code className="bg-gray-900 px-2 py-1 rounded text-brand-secondary font-mono text-lg">API_KEY</code>. This must be exact.
       </li>
       <li>
         <strong>Set the Value:</strong> Paste your Gemini API key into the value field.
       </li>
       <li>
-        <strong>Select Environments:</strong> Ensure the variable is applied to the <strong className="text-brand-primary">Production</strong> environment.
+        <strong>Select Environments:</strong> Ensure the variable is applied to all environments you intend to use (e.g., <strong className="text-brand-primary">Production</strong>, <strong className="text-brand-primary">Preview</strong>, and <strong className="text-brand-primary">Development</strong>).
       </li>
       <li>
         <strong>Redeploy:</strong> This is the most important step! You must <strong className="text-brand-primary">create a new deployment</strong> for the changes to apply. Go to the Deployments tab and redeploy.
       </li>
     </ol>
+    <div className="!mt-6 border-t border-gray-600 pt-4">
+        <h4 className="font-semibold text-white">Common Mistakes</h4>
+        <p className="text-brand-text-muted text-sm mt-2">
+            Please ensure you are not using other variable names. For example, names like <code className="bg-gray-900 px-1 py-0.5 rounded text-red-400">GOOGLE_GENERATIVE_AI_API_KEY</code> or <code className="bg-gray-900 px-1 py-0.5 rounded text-red-400">GEMINI_API_KEY</code> will <strong className="text-red-400">not</strong> work for this application.
+        </p>
+    </div>
   </div>
 );
 

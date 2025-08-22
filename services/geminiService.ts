@@ -1,57 +1,101 @@
 
-const extractFramesFromVideo = (videoBlob: Blob, frameCount: number): Promise<string[]> => {
+
+const extractFramesFromVideo = (
+  videoBlob: Blob, 
+  frameCount: number,
+  onProgress: (progress: number) => void
+): Promise<string[]> => {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
+    const canvas = document.createElement('canvas');
+    
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      URL.revokeObjectURL(video.src);
+      // Remove event listeners
+      video.onloadedmetadata = null;
+      video.onerror = null;
+      // Remove elements from DOM
+      video.remove();
+      canvas.remove();
+    };
+
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error('Frame extraction timed out (15s). The video file may be too large or in an unsupported format.'));
+    }, 15000);
+
     video.preload = 'metadata';
     video.src = URL.createObjectURL(videoBlob);
     video.muted = true;
 
-    const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     const frames: string[] = [];
 
     video.onloadedmetadata = async () => {
+      if (!context || video.videoWidth === 0 || !isFinite(video.duration)) {
+        cleanup();
+        return reject(new Error('Video metadata is invalid. The file may be corrupt or in an unsupported format.'));
+      }
+      
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const duration = video.duration;
       const interval = duration > 1 ? duration / (frameCount + 1) : 0.1;
 
-      const captureFrameAt = (time: number) => {
-        return new Promise<void>((resolveSeek) => {
+      const captureFrameAt = (time: number) => new Promise<void>((resolveSeek, rejectSeek) => {
           video.currentTime = time;
-          video.onseeked = () => {
-             if (context) {
-              context.drawImage(video, 0, 0, canvas.width, canvas.height);
-              const base64Data = canvas.toDataURL('image/jpeg').split(',')[1];
-              if (base64Data) {
-                frames.push(base64Data);
-              }
+          // 'seeked' may not fire for the very first frame in some browsers, 
+          // 'loadeddata' can be a fallback. Using 'seeked' is generally more reliable for subsequent frames.
+          const onSeeked = () => {
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const base64Data = canvas.toDataURL('image/jpeg').split(',')[1];
+            if (base64Data) {
+              frames.push(base64Data);
             }
             resolveSeek();
           };
-        });
-      };
+          video.addEventListener('seeked', onSeeked, { once: true });
+          video.addEventListener('error', () => rejectSeek(new Error('Error seeking video to capture a frame.')), { once: true });
+      });
 
-      for (let i = 1; i <= frameCount; i++) {
-        await captureFrameAt(i * interval);
+      try {
+        for (let i = 1; i <= frameCount; i++) {
+          await captureFrameAt(i * interval);
+          onProgress(i / frameCount); // Report progress as a fraction (0 to 1)
+        }
+        cleanup();
+        resolve(frames);
+      } catch (e) {
+        cleanup();
+        reject(e);
       }
-      
-      URL.revokeObjectURL(video.src);
-      resolve(frames);
     };
 
-    video.onerror = (e) => {
-      URL.revokeObjectURL(video.src);
-      reject('Error loading video file for frame extraction.');
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('Error loading video file. Please check the file format and try again.'));
     };
   });
 };
 
-export const analyzeGameplay = async (videoBlob: Blob, gameName: string): Promise<string> => {
-  const frames = await extractFramesFromVideo(videoBlob, 4);
+export const analyzeGameplay = async (
+    videoBlob: Blob, 
+    gameName: string,
+    onProgress: (message: string, percentage: number | null) => void
+): Promise<string> => {
+  onProgress("Extracting key frames from your video...", 0);
+  
+  const frames = await extractFramesFromVideo(videoBlob, 10, (progress) => {
+    // progress is 0 to 1, we want 0 to 100
+    onProgress("Extracting key frames from your video...", progress * 100);
+  });
+  
   if (frames.length === 0) {
     throw new Error("Could not extract any frames from the video. The file might be corrupt or in an unsupported format. Please try a different recording.");
   }
+
+  onProgress("Sending gameplay to Sensei AI for analysis...", null); // Indeterminate state
 
   const response = await fetch('/api/analyze', {
       method: 'POST',

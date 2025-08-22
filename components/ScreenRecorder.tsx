@@ -1,6 +1,5 @@
-
 import React, { useState, useRef, useCallback } from 'react';
-import { Video, VideoOff, Mic, MicOff, UploadCloud, ArrowLeft } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, UploadCloud, ArrowLeft, Lightbulb, Focus, Clock } from 'lucide-react';
 
 interface ScreenRecorderProps {
   onRecordingComplete: (blob: Blob) => void;
@@ -102,6 +101,27 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
       <p className="text-brand-text-muted text-center mb-8">
         Provide a short clip (1-2 minutes) of your gameplay. Record your screen or upload a video file.
       </p>
+
+      <div className="w-full bg-gray-800/50 rounded-lg border border-gray-700 p-6 mb-8 text-left">
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
+          <Lightbulb size={20} className="mr-2 text-yellow-400" />
+          Pro Tips & Limitations
+        </h3>
+        <ul className="space-y-3 text-brand-text-muted text-sm">
+          <li className="flex items-start">
+            <Video size={16} className="mr-3 mt-1 text-brand-primary flex-shrink-0" />
+            <span><strong>Quality In, Quality Out:</strong> For best results, use a clear, smooth video (720p+, 30fps+). Choppy or low-res clips are harder for the AI to analyze accurately.</span>
+          </li>
+          <li className="flex items-start">
+            <Focus size={16} className="mr-3 mt-1 text-brand-primary flex-shrink-0" />
+            <span><strong>Show a Typical Fight:</strong> The AI needs action! A clip showing a gunfight, including aiming and movement, provides the most useful data.</span>
+          </li>
+          <li className="flex items-start">
+            <Clock size={16} className="mr-3 mt-1 text-brand-primary flex-shrink-0" />
+            <span><strong>Keep it Short:</strong> This tool is optimized for short clips (under 2 minutes). Longer videos may fail to process due to browser limitations.</span>
+          </li>
+        </ul>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
         {/* Recording Section */}
