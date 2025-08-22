@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useCallback } from 'react';
-import { Video, VideoOff, Mic, MicOff, Rss, ArrowLeft } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, UploadCloud, ArrowLeft } from 'lucide-react';
 
 interface ScreenRecorderProps {
   onRecordingComplete: (blob: Blob) => void;
@@ -15,6 +15,7 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -69,9 +70,26 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
       startRecording();
     }
   };
+  
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('video/')) {
+          setError('Please upload a valid video file.');
+          return;
+      }
+      setError(null);
+      onRecordingComplete(file);
+    }
+  };
+
 
   return (
-    <div className="relative flex flex-col items-center justify-center p-8 bg-brand-surface rounded-xl shadow-lg border border-gray-700 max-w-lg mx-auto">
+    <div className="relative flex flex-col items-center justify-center p-8 bg-brand-surface rounded-xl shadow-lg border border-gray-700 max-w-2xl mx-auto w-full">
       <button
         onClick={onBack}
         className="absolute top-4 left-4 text-brand-text-muted hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
@@ -80,40 +98,67 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
         <ArrowLeft size={24} />
       </button>
 
-      <Rss className="w-16 h-16 text-brand-primary mb-4" />
-      <h2 className="text-2xl font-bold text-white mb-2 text-center">Record Gameplay for {gameName}</h2>
-      <p className="text-brand-text-muted text-center mb-6">
-        Record a short clip (1-2 minutes) of your gameplay. Make sure it includes aiming and engagements.
+      <h2 className="text-2xl font-bold text-white mb-2 text-center">Analyze Gameplay for {gameName}</h2>
+      <p className="text-brand-text-muted text-center mb-8">
+        Provide a short clip (1-2 minutes) of your gameplay. Record your screen or upload a video file.
       </p>
       
-      <div className="flex space-x-4 mb-6">
-        <button
-          onClick={handleToggleRecording}
-          className={`px-6 py-3 rounded-lg font-semibold text-white transition-all duration-300 flex items-center space-x-2 ${
-            isRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-primary hover:bg-cyan-500'
-          }`}
-        >
-          {isRecording ? <VideoOff size={20} /> : <Video size={20} />}
-          <span>{isRecording ? 'Stop Recording' : 'Start Recording'}</span>
-        </button>
-        <button
-          onClick={() => setIncludeAudio(!includeAudio)}
-          disabled={isRecording}
-          className="p-3 rounded-lg bg-gray-600 hover:bg-gray-500 text-white transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label={includeAudio ? 'Disable microphone' : 'Enable microphone'}
-        >
-          {includeAudio ? <Mic size={20} /> : <MicOff size={20} />}
-        </button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+        {/* Recording Section */}
+        <div className="flex flex-col items-center p-6 bg-gray-800/50 rounded-lg border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4">Record Gameplay</h3>
+          <div className="flex space-x-4">
+            <button
+              onClick={handleToggleRecording}
+              disabled={!!error && error.includes('permission was denied')}
+              className={`px-6 py-3 rounded-lg font-semibold text-white transition-all duration-300 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                isRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-primary hover:bg-cyan-500'
+              }`}
+            >
+              {isRecording ? <VideoOff size={20} /> : <Video size={20} />}
+              <span>{isRecording ? 'Stop' : 'Record'}</span>
+            </button>
+            <button
+              onClick={() => setIncludeAudio(!includeAudio)}
+              disabled={isRecording}
+              className="p-3 rounded-lg bg-gray-600 hover:bg-gray-500 text-white transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label={includeAudio ? 'Disable microphone' : 'Enable microphone'}
+            >
+              {includeAudio ? <Mic size={20} /> : <MicOff size={20} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Upload Section */}
+        <div className="flex flex-col items-center p-6 bg-gray-800/50 rounded-lg border border-gray-700">
+          <h3 className="text-lg font-semibold text-white mb-4">Upload a Clip</h3>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="video/*"
+            className="hidden"
+          />
+          <button
+            onClick={handleUploadClick}
+            disabled={isRecording}
+            className="px-6 py-3 rounded-lg font-semibold text-white transition-all duration-300 flex items-center space-x-2 bg-brand-secondary hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <UploadCloud size={20} />
+            <span>Choose File</span>
+          </button>
+        </div>
       </div>
 
+
       {isRecording && (
-        <div className="flex items-center space-x-2 text-yellow-400">
+        <div className="mt-6 flex items-center space-x-2 text-yellow-400">
           <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
           <span>Recording in progress... Stop sharing in your browser to finish.</span>
         </div>
       )}
 
-      {error && <p className="mt-4 text-red-400 text-center">{error}</p>}
+      {error && <p className="mt-6 text-red-400 text-center">{error}</p>}
     </div>
   );
 };
