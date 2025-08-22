@@ -1,0 +1,7 @@
+{
+  "name": "Game Sense AI",
+  "description": "An AI-powered application to help gamers analyze their in-game sensitivity and aim by analyzing screen recordings.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
