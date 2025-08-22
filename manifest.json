@@ -1,6 +1,6 @@
 {
-  "short_name": "Sense AI",
-  "name": "Game Sense AI",
+  "short_name": "Sense_AI",
+  "name": "Game_Sense_AI",
   "description": "An AI-powered application to help gamers analyze their in-game sensitivity and aim by analyzing screen recordings.",
   "icons": [
     {
