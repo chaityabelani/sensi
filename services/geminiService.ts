@@ -48,33 +48,32 @@ const extractFramesFromVideo = (videoBlob: Blob, frameCount: number): Promise<st
 };
 
 export const analyzeGameplay = async (videoBlob: Blob, gameName: string): Promise<string> => {
-  try {
-    const frames = await extractFramesFromVideo(videoBlob, 4);
-    if (frames.length === 0) {
-      return "Could not extract frames from the video. Please try a different recording.";
-    }
-
-    const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ frames, gameName }),
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: `Server error: ${response.status} ${response.statusText}`}));
-        throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    return data.analysis;
-
-  } catch (error) {
-    console.error("Error analyzing gameplay:", error);
-    if (error instanceof Error) {
-        return `An error occurred during analysis: ${error.message}. Please try again.`;
-    }
-    return "An unknown error occurred during analysis. Please try again.";
+  const frames = await extractFramesFromVideo(videoBlob, 4);
+  if (frames.length === 0) {
+    throw new Error("Could not extract any frames from the video. The file might be corrupt or in an unsupported format. Please try a different recording.");
   }
+
+  const response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {
+          'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ frames, gameName }),
+  });
+
+  const data = await response.json().catch(() => {
+    // Handle cases where response is not valid JSON (e.g., HTML error page from Vercel)
+    throw new Error(`Server returned an invalid response: ${response.status} ${response.statusText}`);
+  });
+
+  if (!response.ok) {
+      const errorMessage = data.error || `An unknown server error occurred (${response.status}).`;
+      throw new Error(errorMessage);
+  }
+  
+  if (!data.analysis) {
+      throw new Error("Analysis failed: The AI did not return a result. This could be a temporary issue with the service.");
+  }
+
+  return data.analysis;
 };

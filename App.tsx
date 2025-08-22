@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Bot, Gamepad, Github } from 'lucide-react';
 import { AppStage } from './types';
@@ -9,6 +10,7 @@ import GameSelector from './components/GameSelector';
 import ScreenRecorder from './components/ScreenRecorder';
 import Loader from './components/Loader';
 import AnalysisDisplay from './components/AnalysisDisplay';
+import ErrorDisplay from './components/ErrorDisplay';
 
 const App: React.FC = () => {
   const [stage, setStage] = useState<AppStage>(AppStage.SELECT_GAME);
@@ -40,15 +42,16 @@ const App: React.FC = () => {
       return;
     }
     setStage(AppStage.ANALYZING);
+    setError('');
+    setAnalysisResult('');
     try {
       const result = await analyzeGameplay(blob, selectedGame.name);
       setAnalysisResult(result);
-      setStage(AppStage.SHOW_ANALYSIS);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
       setError(errorMessage);
-      setStage(AppStage.SHOW_ANALYSIS); // Show error in the analysis view
-      setAnalysisResult(`Failed to analyze the video. Error: ${errorMessage}`);
+    } finally {
+        setStage(AppStage.SHOW_ANALYSIS);
     }
   }, [selectedGame]);
 
@@ -73,6 +76,9 @@ const App: React.FC = () => {
       case AppStage.ANALYZING:
         return <Loader message="AI is analyzing your gameplay..." />;
       case AppStage.SHOW_ANALYSIS:
+        if (error) {
+            return <ErrorDisplay message={error} onReset={handleReset} />;
+        }
         if (selectedGame) {
           return <AnalysisDisplay analysis={analysisResult} game={selectedGame} onReset={handleReset} />;
         }
@@ -82,7 +88,7 @@ const App: React.FC = () => {
       default:
         return <p>An unknown error occurred. Please refresh the page.</p>;
     }
-  }, [stage, handleGameSelect, handleRecordingComplete, selectedGame, analysisResult, handleReset]);
+  }, [stage, selectedGame, analysisResult, error, handleGameSelect, handleRecordingComplete, handleReset]);
 
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">

@@ -26,7 +26,7 @@ export default async function handler(request: Request) {
     const API_KEY = process.env.API_KEY;
     if (!API_KEY) {
       console.error("API_KEY environment variable not set on server");
-      return new Response(JSON.stringify({ error: 'Server configuration error.' }), { 
+      return new Response(JSON.stringify({ error: 'The API_KEY environment variable is not set on the server. Please add it to your Vercel project settings.' }), { 
           status: 500,
           headers: { 'Content-Type': 'application/json' } 
         });
