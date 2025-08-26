@@ -1,12 +1,18 @@
-
 import React from 'react';
 
 interface LoaderProps {
   message: string;
   percentage: number | null;
+  remainingTime: number | null;
 }
 
-const Loader: React.FC<LoaderProps> = ({ message, percentage }) => {
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+const Loader: React.FC<LoaderProps> = ({ message, percentage, remainingTime }) => {
   const showProgressBar = typeof percentage === 'number' && percentage >= 0 && percentage <= 100;
 
   return (
@@ -20,6 +26,13 @@ const Loader: React.FC<LoaderProps> = ({ message, percentage }) => {
         {message || "Please wait..."}
       </p>
 
+      {/* Timer Display */}
+      {remainingTime !== null && remainingTime > 0 && (
+          <div className="mt-4 text-brand-text-muted">
+              Estimated time remaining: <span className="font-semibold text-white">{formatTime(remainingTime)}</span>
+          </div>
+      )}
+
       {/* Progress Bar Container */}
       <div className="w-full bg-gray-600 rounded-full h-2.5 mt-4 overflow-hidden">
         {showProgressBar && (
@@ -29,6 +42,9 @@ const Loader: React.FC<LoaderProps> = ({ message, percentage }) => {
           ></div>
         )}
       </div>
+       <p className="text-xs text-brand-text-muted text-center mt-6">
+            This can take up to a minute depending on server load. Please don't close this window.
+      </p>
     </div>
   );
 };

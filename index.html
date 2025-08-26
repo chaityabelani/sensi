@@ -21,6 +21,15 @@
               'brand-text': '#E5E7EB',
               'brand-text-muted': '#9CA3AF',
             },
+            animation: {
+              'pulse-target': 'pulse-target 1.5s ease-in-out infinite',
+            },
+            keyframes: {
+              'pulse-target': {
+                '0%, 100%': { transform: 'scale(1)', opacity: 0.9 },
+                '50%': { transform: 'scale(1.1)', opacity: 1 },
+              }
+            }
           },
         },
       }

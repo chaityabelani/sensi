@@ -14,7 +14,7 @@ export default async function handler(request: Request) {
   }
 
   try {
-    const { frames, gameName } = await request.json();
+    const { frames, gameName, sensitivity } = await request.json();
     
     if (!frames || !gameName || !Array.isArray(frames) || frames.length === 0) {
       return new Response(JSON.stringify({ error: 'Missing required fields: frames and gameName' }), { 
@@ -40,11 +40,19 @@ export default async function handler(request: Request) {
         data: frame,
       },
     }));
+    
+    let sensitivityContext = "";
+    if (typeof sensitivity === 'number' && isFinite(sensitivity)) {
+        sensitivityContext = `
+        The player has provided their current in-game sensitivity: ${sensitivity}.
+        Please factor this directly into your analysis. If their aim seems unstable (shaky, over-flicking) or too slow (unable to track targets), suggest a specific, percentage-based adjustment to this value. For example: "Your aim appears slightly shaky. Consider lowering your sensitivity by 10% to around ${(sensitivity * 0.9).toFixed(2)} to improve control." or "You had trouble tracking the fast-moving target. Try increasing your sensitivity by 5% to ${(sensitivity * 1.05).toFixed(2)}." If their sensitivity seems well-suited to their performance in the clip, affirm that.
+        `;
+    }
 
     const prompt = `
       You are Sensei AI, a world-class esports performance coach with a specialization in FPS games like ${gameName}. Your analysis is sharp, insightful, and always focused on helping players improve.
       A player has submitted a screen recording. I am providing you with ${frames.length} key frames from their gameplay.
-
+      ${sensitivityContext}
       Your task is to perform a deep analysis of these frames. Focus on the following key areas:
       1.  **Crosshair Discipline:** Is their crosshair consistently at head or chest level? Are they pre-aiming common angles or corners? Does their crosshair placement dip when they are moving or not in a fight?
       2.  **Aim Mechanics & Recoil Control:** During engagements, analyze their spray control. Is there evidence of micro-corrections? Do they seem to be over-flicking or under-flicking targets? Is their tracking smooth on moving targets?
@@ -56,7 +64,7 @@ export default async function handler(request: Request) {
       A summary paragraph of your key observations, highlighting their biggest strength and their primary area for improvement based on the provided frames.
 
       **Actionable Coaching:**
-      *   **Sensitivity & Aim:** Provide a specific tip related to their sensitivity or aim mechanics. For example: "Your aim appears slightly shaky during sprays. Consider lowering your in-game sensitivity by 5-10% to gain more control." or "You over-flicked the target on the left. Practice flick-shots in the training range to build muscle memory."
+      *   **Sensitivity & Aim:** Provide a specific tip related to their sensitivity or aim mechanics. ${sensitivity ? "This should directly address their provided sensitivity value." : ""} For example: "Your aim appears slightly shaky during sprays. Consider lowering your in-game sensitivity by 5-10% to gain more control." or "You over-flicked the target on the left. Practice flick-shots in the training range to build muscle memory."
       *   **Crosshair Placement:** Give a concrete tip on how to improve their crosshair placement. For example: "When moving into a new area, actively 'slice the pie' and keep your crosshair glued to the next possible enemy position."
       *   **Positioning:** Offer advice on their movement or use of cover. For example: "In the third frame, you were exposed from two different angles. Try to isolate your fights by using nearby cover more effectively."
 

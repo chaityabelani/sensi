@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Video, VideoOff, Mic, MicOff, UploadCloud, ArrowLeft, Lightbulb, Focus, Clock } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, UploadCloud, ArrowLeft, Lightbulb, Focus, Clock, Target } from 'lucide-react';
 
 interface ScreenRecorderProps {
-  onRecordingComplete: (blob: Blob) => void;
+  onRecordingComplete: (blob: Blob, sensitivity: number | null) => void;
   onBack: () => void;
   gameName: string;
 }
@@ -10,11 +10,12 @@ interface ScreenRecorderProps {
 const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, onBack, gameName }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [includeAudio, setIncludeAudio] = useState(true);
+  const [sensitivity, setSensitivity] = useState('');
   const [error, setError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -25,6 +26,11 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
     }
     setIsRecording(false);
   }, []);
+  
+  const getSensitivity = (): number | null => {
+      const sens = parseFloat(sensitivity);
+      return isNaN(sens) ? null : sens;
+  }
 
   const startRecording = async () => {
     setError(null);
@@ -48,7 +54,7 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
       };
       mediaRecorderRef.current.onstop = () => {
         const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
-        onRecordingComplete(blob);
+        onRecordingComplete(blob, getSensitivity());
       };
       mediaRecorderRef.current.start();
       setIsRecording(true);
@@ -82,7 +88,7 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
           return;
       }
       setError(null);
-      onRecordingComplete(file);
+      onRecordingComplete(file, getSensitivity());
     }
   };
 
@@ -98,9 +104,26 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
       </button>
 
       <h2 className="text-2xl font-bold text-white mb-2 text-center">Analyze Gameplay for {gameName}</h2>
-      <p className="text-brand-text-muted text-center mb-8">
-        Provide a short clip (1-2 minutes) of your gameplay. Record your screen or upload a video file.
+      <p className="text-brand-text-muted text-center mb-6">
+        Provide a short clip (1-2 minutes) of your gameplay. For more accurate feedback, enter your sensitivity.
       </p>
+      
+       <div className="w-full mb-6">
+        <label htmlFor="sensitivity" className="block text-sm font-medium text-brand-text-muted mb-2 flex items-center">
+            <Target size={16} className="mr-2 text-brand-secondary" />
+            In-Game Sensitivity (Optional)
+        </label>
+        <input
+            type="number"
+            name="sensitivity"
+            id="sensitivity"
+            value={sensitivity}
+            onChange={(e) => setSensitivity(e.target.value)}
+            className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5"
+            placeholder="e.g., 0.45"
+            step="0.01"
+        />
+      </div>
 
       <div className="w-full bg-gray-800/50 rounded-lg border border-gray-700 p-6 mb-8 text-left">
         <h3 className="text-lg font-semibold text-white mb-4 flex items-center">

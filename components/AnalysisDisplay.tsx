@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { Home } from 'lucide-react';
 import type { Game } from '../types';
@@ -46,18 +47,18 @@ const FormattedAnalysis: React.FC<{ text: string }> = ({ text }) => {
 const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ analysis, game, onReset }) => {
   return (
     <div className="w-full max-w-3xl mx-auto bg-brand-surface rounded-xl shadow-2xl border border-gray-700 overflow-hidden">
-      <div className="p-8">
+      <div className="p-6 sm:p-8">
         <div className="flex flex-col sm:flex-row items-center justify-between mb-6 pb-6 border-b border-gray-700">
             <div className="flex items-center space-x-4">
-                <div className="w-16 h-16 flex items-center justify-center">{game.logo}</div>
+                <div className="w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center">{game.logo}</div>
                 <div>
-                  <h2 className="text-3xl font-bold text-white">Analysis for {game.name}</h2>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-white">Analysis for {game.name}</h2>
                   <p className="text-brand-text-muted">Powered by Sensei AI</p>
                 </div>
             </div>
           <button
             onClick={onReset}
-            className="mt-4 sm:mt-0 flex items-center px-4 py-2 bg-brand-primary text-black rounded-lg hover:bg-cyan-400 transition-colors duration-300 font-semibold"
+            className="mt-4 sm:mt-0 flex items-center px-4 py-2 bg-brand-primary text-black rounded-lg hover:bg-cyan-400 transition-colors duration-300 font-semibold w-full sm:w-auto justify-center"
           >
             <Home size={16} className="mr-2" />
             Return to Home

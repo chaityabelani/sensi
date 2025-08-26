@@ -82,6 +82,7 @@ const extractFramesFromVideo = (
 export const analyzeGameplay = async (
     videoBlob: Blob, 
     gameName: string,
+    sensitivity: number | null,
     onProgress: (message: string, percentage: number | null) => void
 ): Promise<string> => {
   onProgress("Extracting key frames from your video...", 0);
@@ -102,7 +103,7 @@ export const analyzeGameplay = async (
       headers: {
           'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ frames, gameName }),
+      body: JSON.stringify({ frames, gameName, sensitivity }),
   });
 
   const data = await response.json().catch(() => {
