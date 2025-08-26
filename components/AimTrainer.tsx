@@ -150,13 +150,19 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    // Prevent the browser from scrolling the page, allowing us to control the touch behavior.
+    e.preventDefault();
+
     if (e.touches.length !== 1 || !touchStartPosRef.current || !gameAreaStartPosRef.current) return;
     
     const touchCurrentX = e.touches[0].clientX;
     const touchCurrentY = e.touches[0].clientY;
+    
+    // A multiplier to make aiming feel more responsive on mobile.
+    const mobileSensitivity = 1.5;
 
-    const deltaX = touchCurrentX - touchStartPosRef.current.x;
-    const deltaY = touchCurrentY - touchStartPosRef.current.y;
+    const deltaX = (touchCurrentX - touchStartPosRef.current.x) * mobileSensitivity;
+    const deltaY = (touchCurrentY - touchStartPosRef.current.y) * mobileSensitivity;
 
     setGameAreaPosition({
       x: gameAreaStartPosRef.current.x + deltaX,
@@ -172,24 +178,18 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const handleFire = () => {
     if (gameState !== 'playing' || !gameAreaRef.current || targets.length === 0) return;
     
-    const gameAreaRect = gameAreaRef.current.getBoundingClientRect();
-    const crosshairX = gameAreaRect.width / 2;
-    const crosshairY = gameAreaRect.height / 2;
-
     const target = targets[0];
-    const targetSize = 50;
+    const targetRadius = 25; // Half of the target's size (50px)
 
-    const targetViewportX = gameAreaRect.left + (gameAreaRect.width / 2) + target.x + gameAreaPosition.x;
-    const targetViewportY = gameAreaRect.top + (gameAreaRect.height / 2) + target.y + gameAreaPosition.y;
+    // The vector from the crosshair (center of the screen) to the target's center
+    // is simply the target's coordinate plus the current game area offset.
+    const distanceToTargetCenterX = target.x + gameAreaPosition.x;
+    const distanceToTargetCenterY = target.y + gameAreaPosition.y;
 
-    const clickViewportX = gameAreaRect.left + crosshairX;
-    const clickViewportY = gameAreaRect.top + crosshairY;
-
+    // A hit occurs if the crosshair is within the target's radius (a square check is simpler and sufficient).
     if (
-        clickViewportX >= targetViewportX &&
-        clickViewportX <= targetViewportX + targetSize &&
-        clickViewportY >= targetViewportY &&
-        clickViewportY <= targetViewportY + targetSize
+      Math.abs(distanceToTargetCenterX) <= targetRadius &&
+      Math.abs(distanceToTargetCenterY) <= targetRadius
     ) {
         if ('vibrate' in navigator) navigator.vibrate(50); // Haptic for hit
         setHitTimes(prev => [...prev, Date.now() - lastSpawnTimeRef.current]);
