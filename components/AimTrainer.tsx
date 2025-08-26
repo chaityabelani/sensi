@@ -26,15 +26,12 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const [avgHitTime, setAvgHitTime] = useState(0);
   const [showSuggestion, setShowSuggestion] = useState(false);
   const [isMobileView, setIsMobileView] = useState(false);
+  const [crosshairPosition, setCrosshairPosition] = useState({ x: -100, y: -100 });
 
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number | null>(null);
   const spawnTimeoutRef = useRef<number | null>(null);
   const lastSpawnTimeRef = useRef<number>(0);
-  
-  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
-  const gameAreaStartPosRef = useRef<{ x: number; y: number } | null>(null);
-  const [gameAreaPosition, setGameAreaPosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const checkIsMobile = () => {
@@ -53,21 +50,16 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     const { width, height } = gameAreaRef.current.getBoundingClientRect();
     if (width === 0 || height === 0) return;
 
-    if (isMobileView) {
-        setGameAreaPosition({ x: 0, y: 0 });
-    }
-
     const targetSize = 50;
-    const spawnAreaMultiplier = isMobileView ? 2.5 : 1;
     const newTarget = {
       id: Date.now(),
-      x: (Math.random() - 0.5) * (width * spawnAreaMultiplier - targetSize),
-      y: (Math.random() - 0.5) * (height * spawnAreaMultiplier - targetSize),
+      x: Math.random() * (width - targetSize),
+      y: Math.random() * (height - targetSize),
     };
 
     setTargets([newTarget]);
     lastSpawnTimeRef.current = Date.now();
-  }, [isMobileView]);
+  }, []);
 
   const endGame = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -89,6 +81,10 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     setAvgHitTime(0);
     setShowSuggestion(false);
     setGameState('playing');
+    if (isMobileView && gameAreaRef.current) {
+        const rect = gameAreaRef.current.getBoundingClientRect();
+        setCrosshairPosition({ x: rect.width / 2, y: rect.height / 2 });
+    }
     gameAreaRef.current?.focus();
   };
 
@@ -122,18 +118,19 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     setMisses(prev => prev + 1);
 
     const gameAreaRect = gameAreaRef.current.getBoundingClientRect();
-    const gameCenterX = gameAreaRect.width / 2;
-    const gameCenterY = gameAreaRect.height / 2;
-    
     const clickX = e.clientX - gameAreaRect.left;
     const clickY = e.clientY - gameAreaRect.top;
 
     const currentTarget = targets[0];
-    const targetCenterX = currentTarget.x + 25;
-    const targetCenterY = currentTarget.y + 25;
+    const targetSize = 50;
+    const targetCenterX = currentTarget.x + targetSize / 2;
+    const targetCenterY = currentTarget.y + targetSize / 2;
+    
+    const screenCenterX = gameAreaRect.width / 2;
+    const screenCenterY = gameAreaRect.height / 2;
 
-    const distCenterToTarget = Math.hypot(targetCenterX - gameCenterX, targetCenterY - gameCenterY);
-    const distCenterToClick = Math.hypot(clickX - gameCenterX, clickY - gameCenterY);
+    const distCenterToTarget = Math.hypot(targetCenterX - screenCenterX, targetCenterY - screenCenterY);
+    const distCenterToClick = Math.hypot(clickX - screenCenterX, clickY - screenCenterY);
 
     if (distCenterToClick > distCenterToTarget) {
       setOvershoots(prev => prev + 1);
@@ -142,55 +139,43 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     }
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      touchStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      gameAreaStartPosRef.current = { ...gameAreaPosition };
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    // Prevent the browser from scrolling the page, allowing us to control the touch behavior.
-    e.preventDefault();
-
-    if (e.touches.length !== 1 || !touchStartPosRef.current || !gameAreaStartPosRef.current) return;
-    
-    const touchCurrentX = e.touches[0].clientX;
-    const touchCurrentY = e.touches[0].clientY;
-    
-    // A multiplier to make aiming feel more responsive on mobile.
-    const mobileSensitivity = 1.5;
-
-    const deltaX = (touchCurrentX - touchStartPosRef.current.x) * mobileSensitivity;
-    const deltaY = (touchCurrentY - touchStartPosRef.current.y) * mobileSensitivity;
-
-    setGameAreaPosition({
-      x: gameAreaStartPosRef.current.x + deltaX,
-      y: gameAreaStartPosRef.current.y + deltaY,
+  const updateCrosshairPosition = (e: React.TouchEvent) => {
+    if (e.touches.length < 1 || !gameAreaRef.current) return;
+    const touch = e.touches[0];
+    const rect = gameAreaRef.current.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    setCrosshairPosition({ 
+        x: Math.max(0, Math.min(x, rect.width)), 
+        y: Math.max(0, Math.min(y, rect.height)) 
     });
   };
 
-  const handleTouchEnd = () => {
-    touchStartPosRef.current = null;
-    gameAreaStartPosRef.current = null;
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if(gameState !== 'playing') return;
+    updateCrosshairPosition(e);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if(gameState !== 'playing') return;
+    updateCrosshairPosition(e);
   };
   
   const handleFire = () => {
     if (gameState !== 'playing' || !gameAreaRef.current || targets.length === 0) return;
     
     const target = targets[0];
-    const targetRadius = 25; // Half of the target's size (50px)
+    const targetSize = 50;
+    const targetRadius = targetSize / 2;
 
-    // The vector from the crosshair (center of the screen) to the target's center
-    // is simply the target's coordinate plus the current game area offset.
-    const distanceToTargetCenterX = target.x + gameAreaPosition.x;
-    const distanceToTargetCenterY = target.y + gameAreaPosition.y;
+    const targetCenterX = target.x + targetRadius;
+    const targetCenterY = target.y + targetRadius;
 
-    // A hit occurs if the crosshair is within the target's radius (a square check is simpler and sufficient).
-    if (
-      Math.abs(distanceToTargetCenterX) <= targetRadius &&
-      Math.abs(distanceToTargetCenterY) <= targetRadius
-    ) {
+    const distance = Math.hypot(crosshairPosition.x - targetCenterX, crosshairPosition.y - targetCenterY);
+
+    if (distance <= targetRadius) {
         if ('vibrate' in navigator) navigator.vibrate(50); // Haptic for hit
         setHitTimes(prev => [...prev, Date.now() - lastSpawnTimeRef.current]);
         setScore(prev => prev + 1);
@@ -313,7 +298,6 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
           onClick={handleMissClick}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
           tabIndex={0}
         >
           <div className="absolute top-2 left-2 right-2 flex flex-col sm:flex-row justify-between items-center bg-black/30 p-2 rounded-lg text-lg z-20">
@@ -322,26 +306,29 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
               <div className="font-bold">Time: <span className="text-yellow-400">{timeLeft}s</span></div>
           </div>
           
-          <div 
-            className="absolute top-1/2 left-1/2"
-            style={{ transform: `translate(${gameAreaPosition.x}px, ${gameAreaPosition.y}px)`}}
-          >
-            {targets.map(target => (
-              <div
-                key={target.id}
-                className="w-[50px] h-[50px] bg-brand-primary rounded-full absolute cursor-pointer animate-pulse-target border-4 border-cyan-200 shadow-lg shadow-cyan-500/50"
-                style={{
-                  top: `calc(-25px + ${target.y}px)`,
-                  left: `calc(-25px + ${target.x}px)`,
-                }}
-                onClick={handleTargetClick}
-              ></div>
-            ))}
-          </div>
+          {targets.map(target => (
+            <div
+              key={target.id}
+              className="w-[50px] h-[50px] bg-brand-primary rounded-full absolute cursor-pointer animate-pulse-target border-4 border-cyan-200 shadow-lg shadow-cyan-500/50"
+              style={{
+                top: `${target.y}px`,
+                left: `${target.x}px`,
+              }}
+              onClick={handleTargetClick}
+            ></div>
+          ))}
 
           {isMobileView && (
             <>
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 pointer-events-none z-10" style={{ filter: 'drop-shadow(0 0 2px rgba(0, 0, 0, 0.7))' }}>
+              <div 
+                className="absolute w-10 h-10 pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2" 
+                style={{ 
+                    filter: 'drop-shadow(0 0 2px rgba(0, 0, 0, 0.7))',
+                    top: crosshairPosition.y,
+                    left: crosshairPosition.x,
+                    visibility: crosshairPosition.x < 0 ? 'hidden' : 'visible'
+                }}
+              >
                   <div className="absolute top-1/2 left-0 w-full h-[3px] bg-white/90 -translate-y-1/2"></div>
                   <div className="absolute left-1/2 top-0 h-full w-[3px] bg-white/90 -translate-x-1/2"></div>
                   <div className="absolute top-1/2 left-1/2 w-2 h-2 -translate-x-1/2 -translate-y-1/2 bg-white/90 rounded-full"></div>
