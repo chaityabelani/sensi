@@ -1,4 +1,4 @@
-import React from 'react';
-import type { Game } from './types';
-
-export const GAMES: Game[] = [];
+/**
+ * This file is intended for application-wide constants.
+ * The `GAMES` constant was removed as it was unused throughout the application.
+ */

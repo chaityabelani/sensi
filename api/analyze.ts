@@ -1,5 +1,6 @@
 
-import { GoogleGenAI } from "@google/genai";
+
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const config = {
   runtime: 'edge',
@@ -53,35 +54,68 @@ export default async function handler(request: Request) {
       You are Sensei AI, a world-class esports performance coach with a specialization in FPS games like ${gameName}. Your analysis is sharp, insightful, and always focused on helping players improve.
       A player has submitted a screen recording. I am providing you with ${frames.length} key frames from their gameplay.
       ${sensitivityContext}
-      Your task is to perform a deep analysis of these frames. Focus on the following key areas:
-      1.  **Crosshair Discipline:** Is their crosshair consistently at head or chest level? Are they pre-aiming common angles or corners? Does their crosshair placement dip when they are moving or not in a fight?
-      2.  **Aim Mechanics & Recoil Control:** During engagements, analyze their spray control. Is there evidence of micro-corrections? Do they seem to be over-flicking or under-flicking targets? Is their tracking smooth on moving targets?
-      3.  **Movement & Positioning:** Are they using cover effectively, or are they caught in the open? Is their movement purposeful (e.g., jiggle-peeking, counter-strafing)? Are they exposing themselves to multiple angles unnecessarily?
+      Your task is to perform a deep analysis of these frames, focusing on Crosshair Discipline, Aim Mechanics, and Movement/Positioning.
 
-      Based on your deep analysis, provide a concise and encouraging report in the following format. Use markdown for formatting.
-
-      **Sensei's Analysis:**
-      A summary paragraph of your key observations, highlighting their biggest strength and their primary area for improvement based on the provided frames.
-
-      **Actionable Coaching:**
-      *   **Sensitivity & Aim:** Provide a specific tip related to their sensitivity or aim mechanics. ${sensitivity ? "This should directly address their provided sensitivity value." : ""} For example: "Your aim appears slightly shaky during sprays. Consider lowering your in-game sensitivity by 5-10% to gain more control." or "You over-flicked the target on the left. Practice flick-shots in the training range to build muscle memory."
-      *   **Crosshair Placement:** Give a concrete tip on how to improve their crosshair placement. For example: "When moving into a new area, actively 'slice the pie' and keep your crosshair glued to the next possible enemy position."
-      *   **Positioning:** Offer advice on their movement or use of cover. For example: "In the third frame, you were exposed from two different angles. Try to isolate your fights by using nearby cover more effectively."
-
-      **Recommended Drill:**
-      Suggest one specific, actionable drill they can do in-game or in an aim trainer to address the main weakness you identified. For example: "To improve your recoil control, go to the practice range, stand 20m from a wall, and practice spraying so the bullet holes form a tight cluster. Do this for 5 minutes before you play."
-
-      Be professional and encouraging. Remember your analysis is based on a snapshot of their gameplay.
+      You must provide your response as a single JSON object that conforms to the provided schema. This JSON must contain:
+      1. A detailed, text-based 'analysis' in Markdown format. This analysis must include a summary, actionable coaching tips (for sensitivity, crosshair placement, positioning), and a recommended drill.
+      2. A 'visual_data' array containing coordinate data for the crosshair and any enemies in each frame. This data must be normalized (0.0 to 1.0). If a crosshair isn't visible, its value should be null. If no enemies are visible, the enemies array should be empty.
     `;
     
     const contents = [{ parts: [{ text: prompt }, ...imageParts] }];
+
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        analysis: {
+          type: Type.STRING,
+          description: "Your complete text-based report in Markdown format. The report should include: **Sensei's Analysis:** (a summary), **Actionable Coaching:** (specific tips on Sensitivity/Aim, Crosshair Placement, Positioning), and **Recommended Drill:** (a specific drill to practice)."
+        },
+        visual_data: {
+          type: Type.ARRAY,
+          description: "An array of data points for each frame provided.",
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              frame_index: { type: Type.INTEGER, description: "The zero-based index of the frame." },
+              crosshair: {
+                type: Type.OBJECT,
+                description: "The normalized (0.0-1.0) coordinates of the crosshair's center. Null if not visible.",
+                properties: {
+                  x: { type: Type.NUMBER },
+                  y: { type: Type.NUMBER },
+                },
+                nullable: true,
+              },
+              enemies: {
+                type: Type.ARRAY,
+                description: "An array of bounding boxes for visible enemies. Empty if none are visible.",
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    x: { type: Type.NUMBER, description: "Normalized (0.0-1.0) x-coordinate of the top-left corner." },
+                    y: { type: Type.NUMBER, description: "Normalized (0.0-1.0) y-coordinate of the top-left corner." },
+                    width: { type: Type.NUMBER, description: "Normalized (0.0-1.0) width of the box." },
+                    height: { type: Type.NUMBER, description: "Normalized (0.0-1.0) height of the box." },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      required: ["analysis", "visual_data"],
+    };
     
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+      },
     });
     
-    return new Response(JSON.stringify({ analysis: response.text }), {
+    return new Response(JSON.stringify({ analysis: JSON.parse(response.text) }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });

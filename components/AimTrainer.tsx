@@ -4,14 +4,16 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Target, Timer, CheckCircle, XCircle, Home, Play, RefreshCw, Bot, MousePointerClick } from 'lucide-react';
 import HitTimeChart from './HitTimeChart';
 import MissScatterPlot from './MissScatterPlot';
+import HitTimeDistributionChart from './HitTimeDistributionChart';
+import RecoilPatternDisplay from './RecoilPatternDisplay';
 
 interface TargetState {
   x: number;
   y: number;
   size: number;
   createdAt: number;
-  dx: number;
-  dy: number;
+  dx: number; // velocity x
+  dy: number; // velocity y
 }
 
 interface MissData {
@@ -33,340 +35,355 @@ interface AimTrainerProps {
 const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const [gameState, setGameState] = useState<'config' | 'playing' | 'finished'>('config');
   const [gameMode, setGameMode] = useState<'classic' | 'recoil'>('classic');
-  const [target, setTarget] = useState<TargetState | null>(null);
   
-  // Classic Mode State
-  const [score, setScore] = useState(0);
-  const [misses, setMisses] = useState(0);
-  const [hitTimes, setHitTimes] = useState<number[]>([]);
-  const [avgHitTime, setAvgHitTime] = useState(0);
-  const [missClicks, setMissClicks] = useState<MissData[]>([]);
-  
-  // Recoil Mode State
-  const [isFiring, setIsFiring] = useState(false);
-  const [timeOnTarget, setTimeOnTarget] = useState(0);
-  const [totalFiringTime, setTotalFiringTime] = useState(0);
-  const [recoilControl, setRecoilControl] = useState(0);
-
-  // Shared State
+  // --- Game Config State ---
   const [gameDuration, setGameDuration] = useState(30);
   const [targetSize, setTargetSize] = useState(50);
   const [targetSpeed, setTargetSpeed] = useState<'stationary' | 'slow' | 'medium' | 'fast'>('stationary');
+  
+  // --- Shared Gameplay State ---
+  const [target, setTarget] = useState<TargetState | null>(null);
   const [timeLeft, setTimeLeft] = useState(gameDuration);
+  const [feedbackAnims, setFeedbackAnims] = useState<FeedbackAnim[]>([]);
+
+  // --- Classic Mode State ---
+  const [score, setScore] = useState(0);
+  const [misses, setMisses] = useState(0);
+  const [hitTimes, setHitTimes] = useState<number[]>([]);
+  const [missClicks, setMissClicks] = useState<MissData[]>([]);
+  const [isTargetHit, setIsTargetHit] = useState(false);
   const [showSuggestion, setShowSuggestion] = useState(false);
   const [overshoots, setOvershoots] = useState(0);
   const [undershoots, setUndershoots] = useState(0);
-  const [isTargetHit, setIsTargetHit] = useState(false);
-  const [feedbackAnims, setFeedbackAnims] = useState<FeedbackAnim[]>([]);
-
-  const gameAreaRef = useRef<HTMLDivElement>(null);
-  const timerRef = useRef<number | null>(null);
   const lastHitTimeRef = useRef<number>(0);
+
+  // --- Recoil Mode State ---
+  const [isFiring, setIsFiring] = useState(false);
+  const [timeOnTarget, setTimeOnTarget] = useState(0);
+  const [totalFiringTime, setTotalFiringTime] = useState(0);
+  const [recoilPattern, setRecoilPattern] = useState<{x: number, y: number}[]>([]);
+  const directionChangeTimerRef = useRef<number | null>(null);
+
+  // --- Refs ---
+  const gameAreaRef = useRef<HTMLDivElement>(null);
+  const countdownTimerRef = useRef<number | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef(0);
+  const recoilOffsetRef = useRef({ x: 0, y: 0 });
+  const recoilPatternRef = useRef<{x: number, y: number}[]>([]);
+  const recoilFrameCounterRef = useRef(0);
+
+
+  const getSpeedValue = useCallback(() => {
+    switch (targetSpeed) {
+        case 'slow': return 1.5;
+        case 'medium': return 3;
+        case 'fast': return 5;
+        default: return 0;
+    }
+  }, [targetSpeed]);
+
+  const cleanupTimers = useCallback(() => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      if (directionChangeTimerRef.current) clearTimeout(directionChangeTimerRef.current);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      countdownTimerRef.current = null;
+      directionChangeTimerRef.current = null;
+      animationFrameRef.current = null;
+  }, []);
+  
+  const changeTargetDirection = useCallback(() => {
+    if (gameState !== 'playing' || gameMode !== 'recoil') return;
+
+    setTarget(currentTarget => {
+        if (!currentTarget) return null;
+        const speed = getSpeedValue();
+        if (speed === 0) return { ...currentTarget, dx: 0, dy: 0 };
+
+        const angle = Math.random() * 2 * Math.PI;
+        return {
+            ...currentTarget,
+            dx: Math.cos(angle) * speed,
+            dy: Math.sin(angle) * speed,
+        };
+    });
+    
+    const nextChangeInterval = Math.random() * 2000 + 1000; // 1-3 seconds
+    if (directionChangeTimerRef.current) clearTimeout(directionChangeTimerRef.current);
+    directionChangeTimerRef.current = window.setTimeout(changeTargetDirection, nextChangeInterval);
+  }, [getSpeedValue, gameState, gameMode]);
 
   const spawnTarget = useCallback(() => {
     if (!gameAreaRef.current) return;
     const { width, height } = gameAreaRef.current.getBoundingClientRect();
     if (width === 0 || height === 0) return;
 
-    const getSpeedValue = () => {
-        switch (targetSpeed) {
-            case 'slow': return 1.5;
-            case 'medium': return 3;
-            case 'fast': return 5;
-            default: return 0;
-        }
-    };
+    const isRecoil = gameMode === 'recoil';
     const speed = getSpeedValue();
-    let dx = 0;
-    let dy = 0;
+    let dx = 0, dy = 0;
 
-    if (speed > 0) {
+    if (speed > 0 && !isRecoil) { // Recoil mode handles velocity via changeTargetDirection
         const angle = Math.random() * 2 * Math.PI;
         dx = Math.cos(angle) * speed;
         dy = Math.sin(angle) * speed;
     }
 
-    const newTarget: TargetState = {
-      x: Math.random() * (width - targetSize),
-      y: Math.random() * (height - targetSize),
-      size: targetSize,
-      createdAt: Date.now(),
-      dx,
-      dy,
-    };
-    setTarget(newTarget);
-    lastHitTimeRef.current = Date.now();
-  }, [targetSize, targetSpeed]);
+    const newX = isRecoil ? (width - targetSize) / 2 : Math.random() * (width - targetSize);
+    const newY = isRecoil ? (height - targetSize) / 2 : Math.random() * (height - targetSize);
 
-  const spawnRecoilTarget = useCallback(() => {
-    if (!gameAreaRef.current) return;
-    const { width, height } = gameAreaRef.current.getBoundingClientRect();
-    setTarget({
-        x: (width - targetSize) / 2,
-        y: (height - targetSize) / 2,
-        size: targetSize,
-        createdAt: Date.now(),
-        dx: 0,
-        dy: 0,
-    });
-  }, [targetSize]);
+    setTarget({ x: newX, y: newY, size: targetSize, createdAt: Date.now(), dx, dy });
+    
+    if (isRecoil) {
+        changeTargetDirection();
+    } else {
+      lastHitTimeRef.current = Date.now();
+    }
+  }, [gameMode, targetSize, getSpeedValue, changeTargetDirection]);
 
-
-  const resetGameStats = () => {
+  const resetGameStats = useCallback(() => {
     setScore(0);
     setMisses(0);
+    setHitTimes([]);
+    setMissClicks([]);
+    setIsTargetHit(false);
+    setShowSuggestion(false);
     setOvershoots(0);
     setUndershoots(0);
-    setTimeLeft(gameDuration);
-    setHitTimes([]);
-    setAvgHitTime(0);
-    setShowSuggestion(false);
-    setTarget(null);
-    setMissClicks([]);
-    setFeedbackAnims([]);
-    setIsTargetHit(false);
     setIsFiring(false);
     setTimeOnTarget(0);
     setTotalFiringTime(0);
-    setRecoilControl(0);
-  };
+    setTimeLeft(gameDuration);
+    setTarget(null);
+    setFeedbackAnims([]);
+    setRecoilPattern([]);
+    recoilOffsetRef.current = { x: 0, y: 0 };
+    recoilPatternRef.current = [];
+    recoilFrameCounterRef.current = 0;
+    cleanupTimers();
+  }, [gameDuration, cleanupTimers]);
 
-  const startGame = () => {
+  const startGame = useCallback(() => {
     resetGameStats();
     setGameState('playing');
-  };
+  }, [resetGameStats]);
 
   const endGame = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    // Classic mode results
-    setAvgHitTime(hitTimes.length > 0 ? hitTimes.reduce((a, b) => a + b, 0) / hitTimes.length : 0);
-    // Recoil mode results
-    setRecoilControl(totalFiringTime > 0 ? (timeOnTarget / totalFiringTime) * 100 : 0);
     setGameState('finished');
     setTarget(null);
     setIsFiring(false);
-  }, [hitTimes, timeOnTarget, totalFiringTime]);
+    setRecoilPattern(recoilPatternRef.current);
+    if (gameAreaRef.current) {
+        gameAreaRef.current.style.transform = 'translate(0px, 0px)';
+    }
+    cleanupTimers();
+  }, [cleanupTimers]);
 
+  // Main Game Loop
   useEffect(() => {
-      const gameLoop = (timestamp: number) => {
-          if (lastFrameTimeRef.current === 0) {
-              lastFrameTimeRef.current = timestamp;
+    const gameLoop = (timestamp: number) => {
+      if (lastFrameTimeRef.current === 0) lastFrameTimeRef.current = timestamp;
+      const deltaTime = timestamp - lastFrameTimeRef.current;
+      lastFrameTimeRef.current = timestamp;
+
+      // Visual screen shake for recoil
+      if (gameMode === 'recoil' && isFiring && gameAreaRef.current) {
+        const shakeIntensity = 1.5;
+        const recoilX = (Math.random() - 0.5) * shakeIntensity;
+        const recoilY = (Math.random() - 0.5) * shakeIntensity - shakeIntensity; // Bias upwards
+        gameAreaRef.current.style.transform = `translate(${recoilX}px, ${recoilY}px)`;
+      } else if (gameAreaRef.current && gameAreaRef.current.style.transform !== 'translate(0px, 0px)') {
+        gameAreaRef.current.style.transform = 'translate(0px, 0px)';
+      }
+
+      setTarget(currentTarget => {
+        if (!currentTarget || !gameAreaRef.current) return currentTarget;
+        const { width, height } = gameAreaRef.current.getBoundingClientRect();
+        if (width === 0 || height === 0) return currentTarget;
+        
+        const movementScale = deltaTime / (1000 / 60);
+        let { x: newX, y: newY, dx: newDx, dy: newDy } = currentTarget;
+
+        // Base Movement (applies to all moving targets)
+        if (targetSpeed !== 'stationary') {
+          newX += newDx * movementScale;
+          newY += newDy * movementScale;
+
+          if (newX <= 0 || newX + currentTarget.size >= width) newDx = -newDx;
+          if (newY <= 0 || newY + currentTarget.size >= height) newDy = -newDy;
+          newX = Math.max(0, Math.min(newX, width - currentTarget.size));
+          newY = Math.max(0, Math.min(newY, height - currentTarget.size));
+        }
+
+        // Recoil Simulation (additive, only in recoil mode when firing)
+        if (gameMode === 'recoil' && isFiring) {
+          const recoilStrength = 2.5;
+          const jitter = 1.5;
+          const verticalKick = -recoilStrength * movementScale;
+          const horizontalKick = (Math.random() - 0.5) * jitter * movementScale;
+
+          newY += verticalKick;
+          newX += horizontalKick;
+          
+          newX = Math.max(0, Math.min(newX, width - currentTarget.size));
+          newY = Math.max(0, Math.min(newY, height - currentTarget.size));
+
+          // Record recoil pattern
+          recoilOffsetRef.current.x += horizontalKick;
+          recoilOffsetRef.current.y += verticalKick;
+          recoilFrameCounterRef.current++;
+          if (recoilFrameCounterRef.current % 4 === 0) { // Record every 4 frames for ~15fps pattern
+              recoilPatternRef.current.push({ ...recoilOffsetRef.current });
           }
-          const deltaTime = timestamp - lastFrameTimeRef.current;
-          lastFrameTimeRef.current = timestamp;
 
-          if (gameState !== 'playing') return;
+          const { x: mouseX, y: mouseY } = mousePosRef.current;
+          const targetCenterX = newX + currentTarget.size / 2;
+          const targetCenterY = newY + currentTarget.size / 2;
+          const distance = Math.sqrt(Math.pow(mouseX - targetCenterX, 2) + Math.pow(mouseY - targetCenterY, 2));
 
-          setTarget(currentTarget => {
-              if (!currentTarget || !gameAreaRef.current) return currentTarget;
+          if (distance < currentTarget.size / 2) {
+            setTimeOnTarget(prev => prev + deltaTime);
+          }
+          setTotalFiringTime(prev => prev + deltaTime);
+        }
+        
+        return { ...currentTarget, x: newX, y: newY, dx: newDx, dy: newDy };
+      });
 
-              // --- Classic Mode Target Movement ---
-              if (gameMode === 'classic' && targetSpeed !== 'stationary') {
-                  const { width, height } = gameAreaRef.current.getBoundingClientRect();
-                  let newX = currentTarget.x + currentTarget.dx;
-                  let newY = currentTarget.y + currentTarget.dy;
-                  let newDx = currentTarget.dx;
-                  let newDy = currentTarget.dy;
+      animationFrameRef.current = requestAnimationFrame(gameLoop);
+    };
 
-                  if (newX <= 0 || newX + currentTarget.size >= width) {
-                      newDx = -newDx;
-                      newX = Math.max(0, Math.min(newX, width - currentTarget.size));
-                  }
-                  if (newY <= 0 || newY + currentTarget.size >= height) {
-                      newDy = -newDy;
-                      newY = Math.max(0, Math.min(newY, height - currentTarget.size));
-                  }
-                  return { ...currentTarget, x: newX, y: newY, dx: newDx, dy: newDy };
-              }
-
-              // --- Recoil Mode Target Movement ---
-              if (gameMode === 'recoil' && isFiring) {
-                  const recoilStrength = 2.5; // Pixels per frame at 60fps
-                  const jitter = 1.5;
-                  
-                  // Scale movement by delta time to ensure consistent speed across different frame rates
-                  const movementScale = deltaTime / (1000 / 60); // 16.67ms per frame at 60fps
-                  
-                  const dy = -recoilStrength * movementScale;
-                  const dx = (Math.random() - 0.5) * jitter * movementScale;
-                  
-                  const newY = Math.max(0, currentTarget.y + dy);
-                  const newX = currentTarget.x + dx;
-
-                  // Check if cursor is on target
-                  const { x: mouseX, y: mouseY } = mousePosRef.current;
-                  const targetCenterX = newX + currentTarget.size / 2;
-                  const targetCenterY = newY + currentTarget.size / 2;
-                  const distance = Math.sqrt(Math.pow(mouseX - targetCenterX, 2) + Math.pow(mouseY - targetCenterY, 2));
-                  
-                  if (distance < currentTarget.size / 2) {
-                      setTimeOnTarget(prev => prev + deltaTime);
-                  }
-                  setTotalFiringTime(prev => prev + deltaTime);
-
-                  return { ...currentTarget, x: newX, y: newY, dx: currentTarget.dx, dy: currentTarget.dy };
-              }
-
-              return currentTarget;
-          });
-          animationFrameRef.current = requestAnimationFrame(gameLoop);
-      };
-
-      if (gameState === 'playing') {
-          animationFrameRef.current = requestAnimationFrame(gameLoop);
-      } else {
-          if (animationFrameRef.current) {
+    if (gameState === 'playing') {
+      lastFrameTimeRef.current = 0;
+      animationFrameRef.current = requestAnimationFrame(gameLoop);
+    }
+    
+    // This cleanup function should ONLY clean up the animation frame,
+    // so it doesn't interfere with the countdown timer when `isFiring` changes.
+    return () => {
+        if (animationFrameRef.current) {
             cancelAnimationFrame(animationFrameRef.current);
             animationFrameRef.current = null;
-          }
-      }
-      return () => {
-          if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-          lastFrameTimeRef.current = 0;
-      };
+        }
+    };
   }, [gameState, gameMode, targetSpeed, isFiring]);
   
-    // This effect handles setup when the 'playing' state begins.
+  // Effect for initial spawn & countdown timer
   useEffect(() => {
     if (gameState === 'playing') {
       gameAreaRef.current?.focus();
-      
-      // Spawn initial target for recoil mode.
-      if (gameMode === 'recoil') {
-        spawnRecoilTarget();
-      }
+      spawnTarget();
+      countdownTimerRef.current = window.setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            endGame();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     }
-  }, [gameState, gameMode, spawnRecoilTarget]);
+  }, [gameState, spawnTarget, endGame]);
 
-
+  // Effect for respawn loop in Classic mode
   useEffect(() => {
-    if (gameState === 'playing' && target === null && timeLeft > 0 && gameMode === 'classic') {
+    if (gameState === 'playing' && gameMode === 'classic' && target === null && timeLeft > 0 && !isTargetHit) {
       const spawnTimeout = setTimeout(() => spawnTarget(), 300);
       return () => clearTimeout(spawnTimeout);
     }
-  }, [gameState, target, spawnTarget, timeLeft, gameMode]);
-
-  useEffect(() => {
-    if (gameState === 'playing') {
-      timerRef.current = window.setInterval(() => {
-        setTimeLeft(prev => prev > 0 ? prev - 1 : 0);
-      }, 1000);
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-      };
-    }
-  }, [gameState]);
-
-  useEffect(() => {
-    if (timeLeft <= 0 && gameState === 'playing') {
-      endGame();
-    }
-  }, [timeLeft, gameState, endGame]);
+  }, [gameState, gameMode, target, timeLeft, isTargetHit, spawnTarget]);
   
+  // Effect for handling global mouse up to prevent stuck firing state in recoil mode
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      setIsFiring(false);
+    };
+
+    if (gameState === 'playing' && gameMode === 'recoil' && isFiring) {
+      window.addEventListener('mouseup', handleGlobalMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [gameState, gameMode, isFiring]);
+
+
   const addFeedback = (x: number, y: number, type: 'hit' | 'miss') => {
     const newFeedback = { x, y, type, id: Date.now() };
     setFeedbackAnims(prev => [...prev, newFeedback]);
-    setTimeout(() => {
-        setFeedbackAnims(prev => prev.filter(f => f.id !== newFeedback.id));
-    }, 400);
+    setTimeout(() => setFeedbackAnims(prev => prev.filter(f => f.id !== newFeedback.id)), 400);
   };
-
-  const handleHit = () => {
+  
+  const handleHit = () => { // Classic Mode Only
     setIsTargetHit(true);
     setScore(prev => prev + 1);
     setHitTimes(prev => [...prev, Date.now() - lastHitTimeRef.current]);
-
     setTimeout(() => {
         setIsTargetHit(false);
-        if (timeLeft > 0) {
-            spawnTarget();
-        }
+        setTarget(null); // Triggers respawn effect
     }, 200);
   };
 
-  const handleTargetClick = (e: React.MouseEvent) => {
+  const handleTargetClick = (e: React.MouseEvent) => { // Classic Mode Only
     if (gameMode !== 'classic' || isTargetHit || !target) return;
     e.stopPropagation();
     addFeedback(target.x + target.size / 2, target.y + target.size / 2, 'hit');
     handleHit();
   };
   
-  const handleMissClick = (e: React.MouseEvent) => {
+  const handleMissClick = (e: React.MouseEvent) => { // Classic Mode Only
     if (gameMode !== 'classic' || gameState !== 'playing' || !gameAreaRef.current || !target || isTargetHit) return;
     setMisses(prev => prev + 1);
     
     const gameAreaRect = gameAreaRef.current.getBoundingClientRect();
     const clickX = e.clientX - gameAreaRect.left;
     const clickY = e.clientY - gameAreaRect.top;
-    
     addFeedback(clickX, clickY, 'miss');
     
     const targetCenterX = target.x + target.size / 2;
     const targetCenterY = target.y + target.size / 2;
-    
-    setMissClicks(prev => [...prev, {
-      offsetX: clickX - targetCenterX,
-      offsetY: clickY - targetCenterY
-    }]);
+    setMissClicks(prev => [...prev, { offsetX: clickX - targetCenterX, offsetY: clickY - targetCenterY }]);
 
-    if (clickX > targetCenterX) {
-      setOvershoots(prev => prev + 1);
-    } else {
-      setUndershoots(prev => prev + 1);
-    }
+    if (clickX > targetCenterX) setOvershoots(prev => prev + 1);
+    else setUndershoots(prev => prev + 1);
   };
-  
+
   const handleMouseMove = (e: React.MouseEvent) => {
       if (!gameAreaRef.current) return;
       const rect = gameAreaRef.current.getBoundingClientRect();
       mousePosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-      if (gameMode !== 'recoil' || !target || gameState !== 'playing') return;
-      // Also trigger miss for recoil mode to track total clicks
-      if (gameAreaRef.current) {
-        const gameAreaRect = gameAreaRef.current.getBoundingClientRect();
-        const clickX = e.clientX - gameAreaRect.left;
-        const clickY = e.clientY - gameAreaRect.top;
-        const targetCenterX = target.x + target.size / 2;
-        const targetCenterY = target.y + target.size / 2;
-        const distance = Math.sqrt(Math.pow(clickX - targetCenterX, 2) + Math.pow(clickY - targetCenterY, 2));
-
-        if (distance < target.size / 2) {
-            e.preventDefault();
-            setIsFiring(true);
-        }
+  const handleMouseDown = (e: React.MouseEvent) => { // Recoil Mode Only
+      if (gameMode !== 'recoil' || e.button !== 0 || !target || gameState !== 'playing' || !gameAreaRef.current) return;
+      const rect = gameAreaRef.current.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      const distance = Math.sqrt(Math.pow(clickX - (target.x + target.size/2), 2) + Math.pow(clickY - (target.y + target.size/2), 2));
+      if (distance < target.size / 2) {
+          e.preventDefault();
+          setIsFiring(true);
       }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUpOrLeave = () => { // Recoil Mode Only
       if (gameMode === 'recoil') setIsFiring(false);
   };
   
-  const handleMouseLeave = () => {
-      if (gameMode === 'recoil') setIsFiring(false);
-  };
-
+  // --- Memoized Values & Components for Rendering ---
   const accuracy = (score + misses) > 0 ? ((score / (score + misses)) * 100) : 0;
+  const avgHitTime = hitTimes.length > 0 ? hitTimes.reduce((a, b) => a + b, 0) / hitTimes.length : 0;
+  const recoilControl = totalFiringTime > 0 ? (timeOnTarget / totalFiringTime) * 100 : 0;
 
   const getSensitivitySuggestion = (): React.ReactNode => {
     const totalMisses = overshoots + undershoots;
-    if (totalMisses < 5) {
-      return <p>Not enough miss data for a suggestion. Keep practicing!</p>;
-    }
+    if (totalMisses < 5) return <p>Not enough miss data for a suggestion. Keep practicing!</p>;
     const overshootRatio = overshoots / totalMisses;
 
-    if (overshootRatio > 0.65) {
-      return <><p className="mb-2">You're frequently <strong className="text-red-400">overshooting</strong> your targets.</p><p>This suggests your sensitivity might be too high. Try lowering your in-game sensitivity by <strong className="text-brand-primary">10-15%</strong> for better control.</p></>;
-    }
-    if (overshootRatio < 0.35) {
-      return <><p className="mb-2">You're frequently <strong className="text-yellow-400">undershooting</strong> your targets.</p><p>This might mean your sensitivity is too low. Try increasing your in-game sensitivity by <strong className="text-brand-primary">5-10%</strong> to reach targets faster.</p></>;
-    }
-    return <><p className="mb-2">Your aim seems <strong className="text-green-400">balanced!</strong></p><p>Your current sensitivity seems to be a good fit. Focus on consistency.</p></>;
+    if (overshootRatio > 0.65) return <><p className="mb-2">You're frequently <strong className="text-red-400">overshooting</strong>.</p><p>Consider lowering your sensitivity by <strong className="text-brand-primary">10-15%</strong>.</p></>;
+    if (overshootRatio < 0.35) return <><p className="mb-2">You're frequently <strong className="text-yellow-400">undershooting</strong>.</p><p>Consider increasing your sensitivity by <strong className="text-brand-primary">5-10%</strong>.</p></>;
+    return <><p className="mb-2">Your aim seems <strong className="text-green-400">balanced!</strong></p><p>Your current sensitivity is a good fit. Focus on consistency.</p></>;
   };
   
   const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string | number; colorClass: string; }> = ({ icon, label, value, colorClass }) => (
@@ -375,87 +392,75 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
       <span className="text-2xl font-bold text-white">{value}</span>
     </div>
   );
+  
+  const RecoilResults = () => {
+    const getRecoilFeedback = () => {
+        if (recoilControl >= 90) return { title: "Sharpshooter!", message: "Your recoil control is exceptional. You're ready for the highest levels of competition.", color: "text-green-400"};
+        if (recoilControl >= 75) return { title: "Great Control!", message: "You have solid recoil control. Focus on maintaining this consistency during intense fights.", color: "text-brand-primary" };
+        if (recoilControl >= 50) return { title: "Getting There!", message: "You have a good foundation. Practice consistently to make your spray more reliable.", color: "text-yellow-400" };
+        return { title: "Needs Practice", message: "Your spray is a bit wild. Focus on pulling down smoothly and consistently. You'll get it!", color: "text-red-400" };
+    };
+    const feedback = getRecoilFeedback();
+    return (
+        <div className="w-full max-w-4xl text-center">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                {/* Left Column: Stats & Feedback */}
+                <div className="flex flex-col gap-8">
+                    <div className={`p-6 bg-brand-surface rounded-lg text-center flex flex-col items-center justify-center border-2 border-brand-primary shadow-lg shadow-brand-primary/10`}>
+                        <div className="flex items-center justify-center space-x-2 mb-2 text-brand-primary"><MousePointerClick size={24} /><span className="font-semibold text-lg">Recoil Control</span></div>
+                        <span className="text-6xl font-bold text-white">{`${recoilControl.toFixed(1)}%`}</span>
+                        <p className="text-brand-text-muted text-sm mt-2">Percentage of time your cursor was on target while firing.</p>
+                    </div>
+                    <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+                        <h3 className={`text-xl font-bold ${feedback.color}`}>{feedback.title}</h3>
+                        <p className="text-brand-text-muted mt-2">{feedback.message}</p>
+                    </div>
+                </div>
+                {/* Right Column: Recoil Pattern */}
+                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600 min-h-[300px]">
+                    <RecoilPatternDisplay pattern={recoilPattern} />
+                </div>
+            </div>
+        </div>
+    );
+  };
 
   // --- RENDER LOGIC ---
 
   if (gameState === 'config') {
     return (
       <div className="relative flex flex-col items-center justify-center p-8 bg-brand-surface rounded-xl shadow-lg border border-gray-700 max-w-lg mx-auto w-full">
-        <button
-          onClick={onBack}
-          className="absolute top-4 left-4 text-brand-text-muted hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
-          aria-label="Go back to home"
-        >
-          <Home size={24} />
-        </button>
+        <button onClick={onBack} className="absolute top-4 left-4 text-brand-text-muted hover:text-white transition-colors p-2 rounded-full hover:bg-white/10" aria-label="Go back"><Home size={24} /></button>
         <Target size={48} className="text-brand-primary mb-4" />
         <h2 className="text-3xl font-bold text-white mb-2">Aim Trainer</h2>
         <p className="text-brand-text-muted mb-8">Customize your drill and warm up.</p>
-
-        <div className="w-full mb-6">
-          <label htmlFor="gameMode" className="block text-sm font-medium text-brand-text-muted mb-2">Game Mode</label>
-          <select
-            id="gameMode"
-            value={gameMode}
-            onChange={(e) => setGameMode(e.target.value as 'classic' | 'recoil')}
-            className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5"
-          >
-            <option value="classic">Classic</option>
-            <option value="recoil">Recoil Control</option>
-          </select>
+        <div className="w-full space-y-6">
+          <div>
+            <label htmlFor="gameMode" className="block text-sm font-medium text-brand-text-muted mb-2">Game Mode</label>
+            <select id="gameMode" value={gameMode} onChange={(e) => setGameMode(e.target.value as 'classic' | 'recoil')} className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5">
+              <option value="classic">Classic (Click Accuracy)</option>
+              <option value="recoil">Recoil Control (Tracking)</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="duration" className="block text-sm font-medium text-brand-text-muted mb-2">Duration (seconds)</label>
+            <select id="duration" value={gameDuration} onChange={(e) => setGameDuration(parseInt(e.target.value, 10))} className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5">
+              <option value="15">15</option><option value="30">30</option><option value="60">60</option><option value="90">90</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="targetSize" className="block text-sm font-medium text-brand-text-muted mb-2">Target Size ({targetSize}px)</label>
+            <input type="range" id="targetSize" min="20" max="80" value={targetSize} onChange={(e) => setTargetSize(parseInt(e.target.value, 10))} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+          </div>
+          <div>
+            <label htmlFor="targetSpeed" className="block text-sm font-medium text-brand-text-muted mb-2">Target Movement</label>
+            <select id="targetSpeed" value={targetSpeed} onChange={(e) => setTargetSpeed(e.target.value as any)} className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5">
+              <option value="stationary">Stationary</option><option value="slow">Slow</option><option value="medium">Medium</option><option value="fast">Fast</option>
+            </select>
+          </div>
         </div>
-
-        <div className="w-full mb-6">
-          <label htmlFor="duration" className="block text-sm font-medium text-brand-text-muted mb-2">Duration (seconds)</label>
-          <select
-            id="duration"
-            value={gameDuration}
-            onChange={(e) => {
-                const newDuration = parseInt(e.target.value, 10);
-                setGameDuration(newDuration);
-                setTimeLeft(newDuration);
-            }}
-            className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5"
-          >
-            <option value="15">15 seconds</option>
-            <option value="30">30 seconds</option>
-            <option value="60">60 seconds</option>
-            <option value="90">90 seconds</option>
-          </select>
-        </div>
-        
-        <div className="w-full mb-6">
-          <label htmlFor="targetSize" className="block text-sm font-medium text-brand-text-muted mb-2">Target Size ({targetSize}px)</label>
-          <input
-            type="range"
-            id="targetSize"
-            min="20"
-            max="80"
-            value={targetSize}
-            onChange={(e) => setTargetSize(parseInt(e.target.value, 10))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-          />
-        </div>
-
-        <div className="w-full mb-8">
-          <label htmlFor="targetSpeed" className="block text-sm font-medium text-brand-text-muted mb-2">Target Movement</label>
-          <select
-            id="targetSpeed"
-            value={targetSpeed}
-            disabled={gameMode === 'recoil'}
-            onChange={(e) => setTargetSpeed(e.target.value as 'stationary' | 'slow' | 'medium' | 'fast')}
-            className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <option value="stationary">Stationary</option>
-            <option value="slow">Slow</option>
-            <option value="medium">Medium</option>
-            <option value="fast">Fast</option>
-          </select>
-        </div>
-
-        <button onClick={startGame} className="w-full px-8 py-4 rounded-lg font-bold text-lg text-black bg-brand-primary hover:bg-cyan-400 transition-all duration-300 flex items-center justify-center space-x-2 transform hover:scale-105">
-          <Play size={20} />
-          <span>Start Practice</span>
+        <button onClick={startGame} className="w-full mt-8 px-8 py-4 rounded-lg font-bold text-lg text-black bg-brand-primary hover:bg-cyan-400 transition-all duration-300 flex items-center justify-center space-x-2 transform hover:scale-105">
+          <Play size={20} /><span>Start Practice</span>
         </button>
       </div>
     );
@@ -465,63 +470,36 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center">
         <div className="w-full max-w-4xl flex justify-between items-center bg-black/30 p-3 rounded-t-lg z-10">
-            <div className="font-bold text-xl w-1/3 text-left">
-                {gameMode === 'classic' ? `Score: ${score}` : 'Recoil Control'}
-            </div>
-            <div className={`font-bold text-4xl transition-all duration-300 w-1/3 text-center ${timeLeft <= 5 && timeLeft > 0 ? 'text-red-500 scale-110 animate-pulse' : 'text-yellow-400'}`}>
-                {timeLeft}
-            </div>
-            <div className="font-bold text-xl w-1/3 text-right">
-                {gameMode === 'classic' ? `Misses: ${misses}` : `${((totalFiringTime > 0 ? timeOnTarget / totalFiringTime : 0) * 100).toFixed(0)}%`}
-            </div>
+            <div className="font-bold text-xl w-1/3 text-left">{gameMode === 'classic' ? `Score: ${score}` : 'Recoil Control'}</div>
+            <div className={`font-bold text-4xl transition-all duration-300 w-1/3 text-center ${timeLeft <= 5 && timeLeft > 0 ? 'text-red-500 scale-110 animate-pulse' : 'text-yellow-400'}`}>{timeLeft}</div>
+            <div className="font-bold text-xl w-1/3 text-right">{gameMode === 'classic' ? `Accuracy: ${accuracy.toFixed(0)}%` : `${recoilControl.toFixed(0)}%`}</div>
         </div>
         <div
-          className="relative w-full h-[60vh] sm:h-[70vh] max-w-4xl bg-gray-800/50 rounded-b-xl border border-t-0 border-gray-700 cursor-crosshair overflow-hidden"
+          className="relative w-full h-[60vh] sm:h-[70vh] max-w-4xl bg-gray-800/50 rounded-b-xl border border-t-0 border-gray-700 cursor-crosshair overflow-hidden transition-transform duration-75"
           ref={gameAreaRef}
           onClick={handleMissClick}
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
+          onMouseUp={handleMouseUpOrLeave}
+          onMouseLeave={handleMouseUpOrLeave}
           tabIndex={-1}
         >
           {target && (
             <div
-              className={`bg-brand-primary rounded-full absolute border-4 border-cyan-200 shadow-lg shadow-cyan-500/50 
-              ${isTargetHit ? 'animate-destroy-target' : gameMode === 'classic' ? 'animate-spawn-target' : ''} 
-              ${gameMode === 'classic' && targetSpeed === 'stationary' ? 'animate-pulse-target' : ''}
+              className={`bg-brand-primary rounded-full absolute border-4 border-cyan-200 shadow-lg shadow-cyan-500/50 transition-all duration-100
+              ${isTargetHit ? 'animate-destroy-target' : ''} ${gameMode === 'classic' && !isTargetHit ? 'animate-spawn-target' : ''}
               ${isFiring ? 'ring-4 ring-red-500' : ''}`}
-              style={{
-                top: `${target.y}px`,
-                left: `${target.x}px`,
-                width: `${target.size}px`,
-                height: `${target.size}px`,
-                willChange: 'transform, top, left',
-              }}
+              style={{ top: target.y, left: target.x, width: target.size, height: target.size, willChange: 'transform, top, left' }}
               onClick={handleTargetClick}
-            ></div>
+            />
           )}
           {gameMode === 'recoil' && !isFiring && timeLeft > 0 &&
-            <div className="absolute inset-0 flex items-center justify-center text-white text-lg pointer-events-none">
-              <p className="bg-black/50 p-3 rounded-lg">Click and hold the target to begin</p>
-            </div>
+            <div className="absolute inset-0 flex items-center justify-center text-white text-lg pointer-events-none"><p className="bg-black/50 p-3 rounded-lg">Click and hold the target to begin</p></div>
           }
-          {feedbackAnims.map(anim => {
-              if (anim.type === 'miss') {
-                  return <div key={anim.id} className="absolute w-8 h-8 rounded-full border-red-500 animate-miss-feedback" style={{ top: anim.y - 16, left: anim.x - 16, pointerEvents: 'none' }}></div>;
-              }
-              if (anim.type === 'hit') {
-                  return (
-                     <div key={anim.id} className="absolute w-6 h-6 animate-hit-feedback" style={{ top: anim.y - 12, left: anim.x - 12, pointerEvents: 'none' }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#22D3EE" strokeWidth="3">
-                            <path d="M12 5V19" />
-                            <path d="M5 12H19" />
-                        </svg>
-                     </div>
-                  );
-              }
-              return null;
-          })}
+          {feedbackAnims.map(anim => (
+            anim.type === 'miss' ? <div key={anim.id} className="absolute w-8 h-8 rounded-full border-red-500 animate-miss-feedback" style={{ top: anim.y - 16, left: anim.x - 16, pointerEvents: 'none' }}></div>
+            : <div key={anim.id} className="absolute w-6 h-6 animate-hit-feedback" style={{ top: anim.y - 12, left: anim.x - 12, pointerEvents: 'none' }}><svg viewBox="0 0 24 24" fill="none" stroke="#22D3EE" strokeWidth="3"><path d="M12 5V19" /><path d="M5 12H19" /></svg></div>
+          ))}
         </div>
       </div>
     );
@@ -546,48 +524,27 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
                     <StatCard icon={<XCircle size={20} />} label="Misses" value={misses} colorClass="border-red-500" />
                 </div>
             </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full mb-8">
-                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600 min-h-[300px]">
-                    <HitTimeChart hitTimes={hitTimes} avgHitTime={avgHitTime} />
-                </div>
-                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600 min-h-[300px]">
-                    <MissScatterPlot misses={missClicks} targetSize={targetSize} />
-                </div>
+                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600 min-h-[300px]"><HitTimeChart hitTimes={hitTimes} avgHitTime={avgHitTime} /></div>
+                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600 min-h-[300px]"><MissScatterPlot misses={missClicks} targetSize={targetSize} /></div>
+                <div className="lg:col-span-2 bg-gray-800/50 rounded-lg p-4 border border-gray-600 min-h-[300px]"><HitTimeDistributionChart hitTimes={hitTimes} /></div>
             </div>
-
             <div className="w-full bg-gray-800/50 rounded-lg p-6 mb-8 border border-gray-600">
                 <div className="flex justify-between items-center">
                     <h3 className="text-xl font-semibold text-white flex items-center"><Bot size={24} className="mr-3 text-brand-secondary"/>Sensei's Suggestion</h3>
                     <button onClick={() => setShowSuggestion(!showSuggestion)} className="text-sm font-semibold text-brand-primary hover:underline">{showSuggestion ? 'Hide' : 'Analyze My Aim'}</button>
                 </div>
-                {showSuggestion && (
-                <div className="mt-4 pt-4 border-t border-gray-700 text-center text-brand-text-muted">
-                    {getSensitivitySuggestion()}
-                </div>
-                )}
+                {showSuggestion && <div className="mt-4 pt-4 border-t border-gray-700 text-center text-brand-text-muted">{getSensitivitySuggestion()}</div>}
             </div>
         </>
-        ) : (
-        <div className="w-full max-w-sm text-center mb-8">
-            <div className="p-6 bg-brand-primary/10 rounded-lg text-center flex flex-col items-center justify-center border-2 border-brand-primary shadow-lg shadow-brand-primary/10">
-                <div className="flex items-center justify-center space-x-2 mb-2 text-brand-primary"><MousePointerClick size={24} /><span className="font-semibold text-lg">Recoil Control</span></div>
-                <span className="text-5xl font-bold text-white">{`${recoilControl.toFixed(1)}%`}</span>
-                 <p className="text-brand-text-muted text-sm mt-2">
-                    This is the percentage of time your cursor was on target while firing.
-                 </p>
-            </div>
-        </div>
-        )}
+        ) : <RecoilResults />}
 
-        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+        <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mt-8">
           <button onClick={startGame} className="px-6 py-3 rounded-lg font-semibold text-white bg-brand-primary/80 hover:bg-brand-primary transition-colors duration-300 flex items-center space-x-2 justify-center">
-            <RefreshCw size={20} />
-            <span>Play Again</span>
+            <RefreshCw size={20} /><span>Play Again</span>
           </button>
           <button onClick={onBack} className="px-6 py-3 rounded-lg font-semibold text-white bg-brand-secondary/80 hover:bg-brand-secondary transition-colors duration-300 flex items-center space-x-2 justify-center">
-            <Home size={20} />
-            <span>Return to Home</span>
+            <Home size={20} /><span>Return to Home</span>
           </button>
         </div>
       </div>

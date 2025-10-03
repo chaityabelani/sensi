@@ -14,3 +14,27 @@ export enum AppStage {
   SHOW_ANALYSIS = 'SHOW_ANALYSIS',
   PRACTICE_MODE = 'PRACTICE_MODE',
 }
+
+// New types for visual analysis
+export interface CrosshairPosition {
+  x: number;
+  y: number;
+}
+
+export interface EnemyBoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface VisualDataPoint {
+  frame_index: number;
+  crosshair: CrosshairPosition | null;
+  enemies: EnemyBoundingBox[];
+}
+
+export interface AnalysisResponse {
+  analysis: string;
+  visual_data: VisualDataPoint[];
+}

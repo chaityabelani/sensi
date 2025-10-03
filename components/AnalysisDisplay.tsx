@@ -2,12 +2,14 @@
 
 import React from 'react';
 import { Home } from 'lucide-react';
-import type { Game } from '../types';
+import type { Game, AnalysisResponse } from '../types';
+import FrameVisualizer from './FrameVisualizer';
 
 interface AnalysisDisplayProps {
-  analysis: string;
+  analysis: AnalysisResponse;
   game: Game;
   onReset: () => void;
+  frames: string[];
 }
 
 const FormattedAnalysis: React.FC<{ text: string }> = ({ text }) => {
@@ -44,7 +46,7 @@ const FormattedAnalysis: React.FC<{ text: string }> = ({ text }) => {
 };
 
 
-const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ analysis, game, onReset }) => {
+const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ analysis, game, onReset, frames }) => {
   return (
     <div className="w-full max-w-3xl mx-auto bg-brand-surface rounded-xl shadow-2xl border border-gray-700 overflow-hidden">
       <div className="p-6 sm:p-8">
@@ -66,8 +68,13 @@ const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ analysis, game, onRes
         </div>
 
         <div className="p-2">
-          <FormattedAnalysis text={analysis} />
+          <FormattedAnalysis text={analysis.analysis} />
         </div>
+        
+        {frames && frames.length > 0 && analysis.visual_data && (
+           <FrameVisualizer frames={frames} visualData={analysis.visual_data} />
+        )}
+        
          <p className="text-xs text-brand-text-muted text-center mt-8 pt-4 border-t border-gray-700">
             Disclaimer: This AI analysis is based on a few frames from your video and is intended as a helpful suggestion. Your own feeling and continued practice are most important.
          </p>

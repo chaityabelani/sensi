@@ -1,6 +1,8 @@
 
 
-const extractFramesFromVideo = (
+import type { AnalysisResponse } from '../types';
+
+export const extractFramesFromVideo = (
   videoBlob: Blob, 
   frameCount: number,
   onProgress: (progress: number) => void
@@ -80,20 +82,13 @@ const extractFramesFromVideo = (
 };
 
 export const analyzeGameplay = async (
-    videoBlob: Blob, 
+    frames: string[], 
     gameName: string,
     sensitivity: number | null,
     onProgress: (message: string, percentage: number | null) => void
-): Promise<string> => {
-  onProgress("Extracting key frames from your video...", 0);
-  
-  const frames = await extractFramesFromVideo(videoBlob, 10, (progress) => {
-    // progress is 0 to 1, we want 0 to 100
-    onProgress("Extracting key frames from your video...", progress * 100);
-  });
-  
-  if (frames.length === 0) {
-    throw new Error("Could not extract any frames from the video. The file might be corrupt or in an unsupported format. Please try a different recording.");
+): Promise<AnalysisResponse> => {
+   if (frames.length === 0) {
+    throw new Error("No frames were provided for analysis.");
   }
 
   onProgress("Sending gameplay to Sensei AI for analysis...", null); // Indeterminate state
@@ -116,8 +111,8 @@ export const analyzeGameplay = async (
       throw new Error(errorMessage);
   }
   
-  if (!data.analysis) {
-      throw new Error("Analysis failed: The AI did not return a result. This could be a temporary issue with the service.");
+  if (!data.analysis || !data.analysis.analysis || !data.analysis.visual_data) {
+      throw new Error("Analysis failed: The AI did not return a valid result. This could be a temporary issue with the service.");
   }
 
   return data.analysis;
