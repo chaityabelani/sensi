@@ -486,7 +486,7 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         >
           {target && (
             <div
-              className={`bg-brand-primary rounded-full absolute border-4 border-cyan-200 shadow-lg shadow-cyan-500/50 transition-all duration-100
+              className={`bg-brand-primary rounded-full absolute border-4 border-cyan-200 shadow-lg shadow-cyan-500/50
               ${isTargetHit ? 'animate-destroy-target' : ''} ${gameMode === 'classic' && !isTargetHit ? 'animate-spawn-target' : ''}
               ${isFiring ? 'ring-4 ring-red-500' : ''}`}
               style={{ top: target.y, left: target.x, width: target.size, height: target.size, willChange: 'transform, top, left' }}
