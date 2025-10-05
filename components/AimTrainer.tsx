@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Target, Timer, CheckCircle, XCircle, Home, Play, RefreshCw, Bot, MousePointerClick } from 'lucide-react';
+import { Target, Timer, CheckCircle, XCircle, Home, Play, RefreshCw, Bot, MousePointerClick, Settings2 } from 'lucide-react';
 import HitTimeChart from './HitTimeChart';
 import MissScatterPlot from './MissScatterPlot';
 import HitTimeDistributionChart from './HitTimeDistributionChart';
@@ -34,7 +34,7 @@ interface AimTrainerProps {
 
 const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const [gameState, setGameState] = useState<'config' | 'playing' | 'finished'>('config');
-  const [gameMode, setGameMode] = useState<'classic' | 'recoil'>('classic');
+  const [gameMode, setGameMode] = useState<'classic' | 'recoil' | 'rotate'>('classic');
   
   // --- Game Config State ---
   const [gameDuration, setGameDuration] = useState(30);
@@ -64,6 +64,18 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const [recoilPattern, setRecoilPattern] = useState<{x: number, y: number}[]>([]);
   const directionChangeTimerRef = useRef<number | null>(null);
 
+  // --- Rotate Mode State ---
+  const [crosshairPos, setCrosshairPos] = useState({ x: 0, y: 0 });
+  const isAimingRef = useRef(false);
+  const lastAimPosRef = useRef({ x: 0, y: 0 });
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const [fireButtonConfig, setFireButtonConfig] = useState({
+    size: 80, // px
+    bottom: 20, // px
+    right: 20, // px
+  });
+
+
   // --- Refs ---
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const countdownTimerRef = useRef<number | null>(null);
@@ -73,6 +85,10 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const recoilOffsetRef = useRef({ x: 0, y: 0 });
   const recoilPatternRef = useRef<{x: number, y: number}[]>([]);
   const recoilFrameCounterRef = useRef(0);
+  const previewAreaRef = useRef<HTMLDivElement>(null);
+  const isDraggingButtonRef = useRef(false);
+  const dragStartPosRef = useRef({ x: 0, y: 0 });
+  const dragStartButtonPosRef = useRef({ bottom: 0, right: 0 });
 
 
   const getSpeedValue = useCallback(() => {
@@ -165,8 +181,12 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
 
   const startGame = useCallback(() => {
     resetGameStats();
+    if (gameMode === 'rotate' && gameAreaRef.current) {
+      const { width, height } = gameAreaRef.current.getBoundingClientRect();
+      setCrosshairPos({ x: width / 2, y: height / 2 });
+    }
     setGameState('playing');
-  }, [resetGameStats]);
+  }, [resetGameStats, gameMode]);
 
   const endGame = useCallback(() => {
     setGameState('finished');
@@ -285,9 +305,9 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     }
   }, [gameState, spawnTarget, endGame]);
 
-  // Effect for respawn loop in Classic mode
+  // Effect for respawn loop in Classic & Rotate modes
   useEffect(() => {
-    if (gameState === 'playing' && gameMode === 'classic' && target === null && timeLeft > 0 && !isTargetHit) {
+    if (gameState === 'playing' && (gameMode === 'classic' || gameMode === 'rotate') && target === null && timeLeft > 0 && !isTargetHit) {
       const spawnTimeout = setTimeout(() => spawnTarget(), 300);
       return () => clearTimeout(spawnTimeout);
     }
@@ -315,7 +335,7 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     setTimeout(() => setFeedbackAnims(prev => prev.filter(f => f.id !== newFeedback.id)), 400);
   };
   
-  const handleHit = () => { // Classic Mode Only
+  const handleHit = () => { // For Classic and Rotate Modes
     setIsTargetHit(true);
     setScore(prev => prev + 1);
     setHitTimes(prev => [...prev, Date.now() - lastHitTimeRef.current]);
@@ -369,6 +389,62 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
 
   const handleMouseUpOrLeave = () => { // Recoil Mode Only
       if (gameMode === 'recoil') setIsFiring(false);
+  };
+
+  // --- Rotate Mode Handlers ---
+  const handleAimStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (gameMode !== 'rotate' || gameState !== 'playing') return;
+    e.preventDefault();
+    isAimingRef.current = true;
+    const pos = 'touches' in e ? e.touches[0] : e;
+    lastAimPosRef.current = { x: pos.clientX, y: pos.clientY };
+  };
+
+  const handleAimMove = (e: React.MouseEvent | React.TouchEvent) => {
+      if (gameMode !== 'rotate' || gameState !== 'playing' || !isAimingRef.current) return;
+      e.preventDefault();
+      const pos = 'touches' in e ? e.touches[0] : e;
+      const deltaX = pos.clientX - lastAimPosRef.current.x;
+      const deltaY = pos.clientY - lastAimPosRef.current.y;
+      lastAimPosRef.current = { x: pos.clientX, y: pos.clientY };
+
+      setCrosshairPos(prev => {
+          if (!gameAreaRef.current) return prev;
+          const { width, height } = gameAreaRef.current.getBoundingClientRect();
+          const sensitivity = 1.5; // Make aiming a bit faster
+          const newX = Math.max(0, Math.min(width, prev.x + deltaX * sensitivity));
+          const newY = Math.max(0, Math.min(height, prev.y + deltaY * sensitivity));
+          return { x: newX, y: newY };
+      });
+  };
+
+  const handleAimEnd = (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault();
+      isAimingRef.current = false;
+  };
+  
+  const handleFire = () => {
+    if (gameMode !== 'rotate' || gameState !== 'playing' || !target || isTargetHit) return;
+
+    addFeedback(crosshairPos.x, crosshairPos.y, 'hit'); // Visual for shot
+
+    const isHit =
+      crosshairPos.x >= target.x &&
+      crosshairPos.x <= target.x + target.size &&
+      crosshairPos.y >= target.y &&
+      crosshairPos.y <= target.y + target.size;
+
+    if (isHit) {
+      handleHit();
+    } else {
+      setMisses(prev => prev + 1);
+      const targetCenterX = target.x + target.size / 2;
+      const targetCenterY = target.y + target.size / 2;
+      setMissClicks(prev => [...prev, { offsetX: crosshairPos.x - targetCenterX, offsetY: crosshairPos.y - targetCenterY }]);
+
+      if (crosshairPos.x > targetCenterX) setOvershoots(prev => prev + 1);
+      else setUndershoots(prev => prev + 1);
+    }
   };
   
   // --- Memoized Values & Components for Rendering ---
@@ -428,6 +504,46 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   // --- RENDER LOGIC ---
 
   if (gameState === 'config') {
+    const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!previewAreaRef.current) return;
+        isDraggingButtonRef.current = true;
+        const pos = 'touches' in e ? e.touches[0] : e;
+        dragStartPosRef.current = { x: pos.clientX, y: pos.clientY };
+        dragStartButtonPosRef.current = { bottom: fireButtonConfig.bottom, right: fireButtonConfig.right };
+        document.body.style.cursor = 'grabbing';
+        e.preventDefault();
+    };
+
+    const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isDraggingButtonRef.current || !previewAreaRef.current) return;
+
+        const pos = 'touches' in e ? e.touches[0] : e;
+        const deltaX = pos.clientX - dragStartPosRef.current.x;
+        const deltaY = pos.clientY - dragStartPosRef.current.y;
+
+        const previewRect = previewAreaRef.current.getBoundingClientRect();
+
+        let newRight = dragStartButtonPosRef.current.right - deltaX;
+        let newBottom = dragStartButtonPosRef.current.bottom - deltaY;
+
+        // Clamp values to stay within the preview area
+        newRight = Math.max(0, Math.min(newRight, previewRect.width - fireButtonConfig.size));
+        newBottom = Math.max(0, Math.min(newBottom, previewRect.height - fireButtonConfig.size));
+
+        setFireButtonConfig(prev => ({
+            ...prev,
+            bottom: Math.round(newBottom),
+            right: Math.round(newRight),
+        }));
+    };
+
+    const handleDragEnd = () => {
+        if (isDraggingButtonRef.current) {
+            isDraggingButtonRef.current = false;
+            document.body.style.cursor = 'default';
+        }
+    };
+
     return (
       <div className="relative flex flex-col items-center justify-center p-8 bg-brand-surface rounded-xl shadow-lg border border-gray-700 max-w-lg mx-auto w-full">
         <button onClick={onBack} className="absolute top-4 left-4 text-brand-text-muted hover:text-white transition-colors p-2 rounded-full hover:bg-white/10" aria-label="Go back"><Home size={24} /></button>
@@ -437,10 +553,22 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         <div className="w-full space-y-6">
           <div>
             <label htmlFor="gameMode" className="block text-sm font-medium text-brand-text-muted mb-2">Game Mode</label>
-            <select id="gameMode" value={gameMode} onChange={(e) => setGameMode(e.target.value as 'classic' | 'recoil')} className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5">
-              <option value="classic">Classic (Click Accuracy)</option>
-              <option value="recoil">Recoil Control (Tracking)</option>
-            </select>
+            <div className="flex items-center space-x-4">
+                <select id="gameMode" value={gameMode} onChange={(e) => setGameMode(e.target.value as 'classic' | 'recoil' | 'rotate')} className="flex-grow bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5">
+                <option value="classic">Classic (Click Accuracy)</option>
+                <option value="recoil">Recoil Control (Tracking)</option>
+                <option value="rotate">Rotate (Mobile Style)</option>
+                </select>
+                {gameMode === 'rotate' && (
+                    <button 
+                    onClick={() => setIsCustomizing(true)}
+                    className="p-2.5 bg-brand-secondary/80 hover:bg-brand-secondary rounded-lg text-white transition-colors"
+                    aria-label="Customize controls"
+                    >
+                    <Settings2 size={20} />
+                    </button>
+                )}
+            </div>
           </div>
           <div>
             <label htmlFor="duration" className="block text-sm font-medium text-brand-text-muted mb-2">Duration (seconds)</label>
@@ -462,37 +590,124 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         <button onClick={startGame} className="w-full mt-8 px-8 py-4 rounded-lg font-bold text-lg text-black bg-brand-primary hover:bg-cyan-400 transition-all duration-300 flex items-center justify-center space-x-2 transform hover:scale-105">
           <Play size={20} /><span>Start Practice</span>
         </button>
+
+        {isCustomizing && (
+            <div 
+                className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+                onMouseMove={handleDragMove}
+                onMouseUp={handleDragEnd}
+                onMouseLeave={handleDragEnd}
+                onTouchMove={handleDragMove}
+                onTouchEnd={handleDragEnd}
+            >
+                <div className="bg-brand-surface p-6 rounded-lg w-full max-w-lg shadow-2xl border border-gray-600" onMouseUp={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold mb-4 text-white">Customize Fire Button</h3>
+                    
+                    <div 
+                        ref={previewAreaRef}
+                        className="relative w-full h-56 bg-gray-800/50 mt-4 rounded-lg overflow-hidden border border-gray-700 mb-6 touch-none"
+                    >
+                        <div 
+                            onMouseDown={handleDragStart}
+                            onTouchStart={handleDragStart}
+                            className="absolute bg-red-600/80 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg select-none cursor-grab active:cursor-grabbing active:scale-105"
+                            style={{
+                                width: fireButtonConfig.size,
+                                height: fireButtonConfig.size,
+                                bottom: fireButtonConfig.bottom,
+                                right: fireButtonConfig.right,
+                                fontSize: `${Math.max(12, fireButtonConfig.size / 5)}px`
+                            }}
+                        >
+                        FIRE
+                        </div>
+                        <p className="absolute top-2 left-3 text-xs text-brand-text-muted pointer-events-none">Drag to move, use slider for size.</p>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-brand-text-muted mb-2">Size ({fireButtonConfig.size}px)</label>
+                            <input 
+                                type="range" min="60" max="140" 
+                                value={fireButtonConfig.size} 
+                                onChange={(e) => setFireButtonConfig(prev => ({ ...prev, size: parseInt(e.target.value) }))} 
+                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                            />
+                        </div>
+                    </div>
+                    
+                    <button onClick={() => { setIsCustomizing(false); handleDragEnd(); }} className="w-full mt-8 px-6 py-3 rounded-lg font-semibold text-black bg-brand-primary hover:bg-cyan-400 transition-colors duration-300">
+                        Done
+                    </button>
+                </div>
+            </div>
+        )}
       </div>
     );
   }
 
   if (gameState === 'playing') {
+     const gameAreaHandlers = {
+      classic: { onClick: handleMissClick },
+      recoil: {
+        onMouseMove: handleMouseMove,
+        onMouseDown: handleMouseDown,
+        onMouseUp: handleMouseUpOrLeave,
+        onMouseLeave: handleMouseUpOrLeave,
+      },
+      rotate: {
+        onMouseDown: handleAimStart,
+        onMouseMove: handleAimMove,
+        onMouseUp: handleAimEnd,
+        onTouchStart: handleAimStart,
+        onTouchMove: handleAimMove,
+        onTouchEnd: handleAimEnd,
+      },
+    };
+
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center">
-        <div className="w-full max-w-4xl flex justify-between items-center bg-black/30 p-3 rounded-t-lg z-10">
-            <div className="font-bold text-xl w-1/3 text-left">{gameMode === 'classic' ? `Score: ${score}` : 'Recoil Control'}</div>
+      <div className="fixed inset-0 z-50 bg-brand-bg flex flex-col lg:items-center lg:justify-center">
+        <div className="w-full lg:max-w-4xl flex justify-between items-center bg-black/30 p-3 lg:rounded-t-lg z-10">
+            <div className="font-bold text-xl w-1/3 text-left">{gameMode === 'classic' || gameMode === 'rotate' ? `Score: ${score}` : 'Recoil Control'}</div>
             <div className={`font-bold text-4xl transition-all duration-300 w-1/3 text-center ${timeLeft <= 5 && timeLeft > 0 ? 'text-red-500 scale-110 animate-pulse' : 'text-yellow-400'}`}>{timeLeft}</div>
-            <div className="font-bold text-xl w-1/3 text-right">{gameMode === 'classic' ? `Accuracy: ${accuracy.toFixed(0)}%` : `${recoilControl.toFixed(0)}%`}</div>
+            <div className="font-bold text-xl w-1/3 text-right">{gameMode === 'classic' || gameMode === 'rotate' ? `Accuracy: ${accuracy.toFixed(0)}%` : `${recoilControl.toFixed(0)}%`}</div>
         </div>
         <div
-          className="relative w-full h-[60vh] sm:h-[70vh] max-w-4xl bg-gray-800/50 rounded-b-xl border border-t-0 border-gray-700 cursor-crosshair overflow-hidden transition-transform duration-75"
+          className={`relative w-full flex-grow lg:flex-grow-0 lg:h-[70vh] lg:max-w-4xl bg-gray-800/50 lg:rounded-b-xl border-gray-700 lg:border lg:border-t-0 overflow-hidden transition-transform duration-75 ${gameMode === 'rotate' ? 'cursor-none' : 'cursor-crosshair'}`}
           ref={gameAreaRef}
-          onClick={handleMissClick}
-          onMouseMove={handleMouseMove}
-          onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUpOrLeave}
-          onMouseLeave={handleMouseUpOrLeave}
           tabIndex={-1}
+          {...gameAreaHandlers[gameMode]}
         >
           {target && (
             <div
               className={`bg-brand-primary rounded-full absolute border-4 border-cyan-200 shadow-lg shadow-cyan-500/50
-              ${isTargetHit ? 'animate-destroy-target' : ''} ${gameMode === 'classic' && !isTargetHit ? 'animate-spawn-target' : ''}
+              ${isTargetHit ? 'animate-destroy-target' : ''} ${(gameMode === 'classic' || gameMode === 'rotate') && !isTargetHit ? 'animate-spawn-target' : ''}
               ${isFiring ? 'ring-4 ring-red-500' : ''}`}
               style={{ top: target.y, left: target.x, width: target.size, height: target.size, willChange: 'transform, top, left' }}
-              onClick={handleTargetClick}
+              onClick={gameMode === 'classic' ? handleTargetClick : undefined}
             />
           )}
+
+          {gameMode === 'rotate' && (
+             <div
+              className="absolute pointer-events-none"
+              style={{
+                transform: `translate(${crosshairPos.x}px, ${crosshairPos.y}px)`,
+                top: 0,
+                left: 0,
+                willChange: 'transform'
+              }}
+            >
+              <div className="w-8 h-8 -translate-x-1/2 -translate-y-1/2 text-white">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="2" />
+                  <path d="M12 5V2" /><path d="M12 22V19" />
+                  <path d="M5 12H2" /><path d="M22 12H19" />
+                </svg>
+              </div>
+            </div>
+          )}
+
           {gameMode === 'recoil' && !isFiring && timeLeft > 0 &&
             <div className="absolute inset-0 flex items-center justify-center text-white text-lg pointer-events-none"><p className="bg-black/50 p-3 rounded-lg">Click and hold the target to begin</p></div>
           }
@@ -501,17 +716,42 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
             : <div key={anim.id} className="absolute w-6 h-6 animate-hit-feedback" style={{ top: anim.y - 12, left: anim.x - 12, pointerEvents: 'none' }}><svg viewBox="0 0 24 24" fill="none" stroke="#22D3EE" strokeWidth="3"><path d="M12 5V19" /><path d="M5 12H19" /></svg></div>
           ))}
         </div>
+
+        {gameMode === 'rotate' && (
+          <div 
+            className="absolute z-20"
+            style={{
+                bottom: `${fireButtonConfig.bottom}px`,
+                right: `${fireButtonConfig.right}px`,
+            }}
+            >
+            <button
+              onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); handleFire(); }}
+              onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); handleFire(); }}
+              className="bg-red-600/80 rounded-full active:bg-red-700 border-4 border-white/30 flex items-center justify-center text-white font-bold transition-all duration-100"
+              style={{
+                width: `${fireButtonConfig.size}px`,
+                height: `${fireButtonConfig.size}px`,
+                fontSize: `${Math.max(12, fireButtonConfig.size / 5)}px`
+              }}
+            >
+              FIRE
+            </button>
+          </div>
+        )}
       </div>
     );
   }
   
   if (gameState === 'finished') {
+    const isClassicOrRotate = gameMode === 'classic' || gameMode === 'rotate';
+
     return (
       <div className="relative flex flex-col items-center p-4 sm:p-8 bg-brand-surface rounded-xl shadow-lg border border-gray-700 max-w-4xl mx-auto w-full">
         <h2 className="text-3xl font-bold text-white mb-2 text-center">Practice Complete!</h2>
-        <p className="text-brand-text-muted mb-8">Here's your performance summary for {gameMode === 'classic' ? 'Classic' : 'Recoil Control'} mode.</p>
+        <p className="text-brand-text-muted mb-8">Here's your performance summary for {gameMode.charAt(0).toUpperCase() + gameMode.slice(1)} mode.</p>
 
-        {gameMode === 'classic' ? (
+        {isClassicOrRotate ? (
         <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mb-8">
                 <div className="md:col-span-1 p-6 bg-brand-primary/10 rounded-lg text-center flex flex-col items-center justify-center border-2 border-brand-primary shadow-lg shadow-brand-primary/10 order-first md:order-none">
