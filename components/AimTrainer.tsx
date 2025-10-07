@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Target, Timer, CheckCircle, XCircle, Home, Play, RefreshCw, Bot, MousePointerClick, Settings2 } from 'lucide-react';
 import HitTimeChart from './HitTimeChart';
@@ -71,8 +70,8 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [fireButtonConfig, setFireButtonConfig] = useState({
     size: 80, // px
-    bottom: 20, // px
-    right: 20, // px
+    bottom: 5, // %
+    right: 5, // %
   });
 
 
@@ -512,6 +511,7 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         dragStartButtonPosRef.current = { bottom: fireButtonConfig.bottom, right: fireButtonConfig.right };
         document.body.style.cursor = 'grabbing';
         e.preventDefault();
+        e.stopPropagation();
     };
 
     const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
@@ -522,18 +522,24 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         const deltaY = pos.clientY - dragStartPosRef.current.y;
 
         const previewRect = previewAreaRef.current.getBoundingClientRect();
+        if (previewRect.width === 0 || previewRect.height === 0) return;
 
-        let newRight = dragStartButtonPosRef.current.right - deltaX;
-        let newBottom = dragStartButtonPosRef.current.bottom - deltaY;
+        const startRightPx = (dragStartButtonPosRef.current.right / 100) * previewRect.width;
+        const startBottomPx = (dragStartButtonPosRef.current.bottom / 100) * previewRect.height;
+        
+        const newRightPx = startRightPx - deltaX;
+        const newBottomPx = startBottomPx - deltaY;
 
-        // Clamp values to stay within the preview area
-        newRight = Math.max(0, Math.min(newRight, previewRect.width - fireButtonConfig.size));
-        newBottom = Math.max(0, Math.min(newBottom, previewRect.height - fireButtonConfig.size));
+        const clampedRightPx = Math.max(0, Math.min(newRightPx, previewRect.width - fireButtonConfig.size));
+        const clampedBottomPx = Math.max(0, Math.min(newBottomPx, previewRect.height - fireButtonConfig.size));
+
+        const newRightPercent = (clampedRightPx / previewRect.width) * 100;
+        const newBottomPercent = (clampedBottomPx / previewRect.height) * 100;
 
         setFireButtonConfig(prev => ({
             ...prev,
-            bottom: Math.round(newBottom),
-            right: Math.round(newRight),
+            bottom: newBottomPercent,
+            right: newRightPercent,
         }));
     };
 
@@ -592,51 +598,61 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         </button>
 
         {isCustomizing && (
-            <div 
-                className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            <div
+                className="absolute inset-0 bg-brand-bg/90 backdrop-blur-sm z-50 p-4 flex flex-col justify-center items-center touch-none"
                 onMouseMove={handleDragMove}
                 onMouseUp={handleDragEnd}
                 onMouseLeave={handleDragEnd}
                 onTouchMove={handleDragMove}
                 onTouchEnd={handleDragEnd}
             >
-                <div className="bg-brand-surface p-6 rounded-lg w-full max-w-lg shadow-2xl border border-gray-600" onMouseUp={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-                    <h3 className="text-xl font-bold mb-4 text-white">Customize Fire Button</h3>
-                    
-                    <div 
-                        ref={previewAreaRef}
-                        className="relative w-full h-56 bg-gray-800/50 mt-4 rounded-lg overflow-hidden border border-gray-700 mb-6 touch-none"
+                {/* Adjustment Plane */}
+                <div 
+                    ref={previewAreaRef} 
+                    className="relative w-full max-w-3xl bg-gray-800/50 border-2 border-dashed border-gray-600 rounded-lg mb-6"
+                    style={{ aspectRatio: '16 / 9' }}
+                >
+                    {/* Fire Button for preview and dragging */}
+                    <div
+                        onMouseDown={handleDragStart}
+                        onTouchStart={handleDragStart}
+                        className="absolute bg-red-600/80 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg select-none cursor-grab active:cursor-grabbing active:scale-105"
+                        style={{
+                            width: fireButtonConfig.size,
+                            height: fireButtonConfig.size,
+                            bottom: `${fireButtonConfig.bottom}%`,
+                            right: `${fireButtonConfig.right}%`,
+                            fontSize: `${Math.max(12, fireButtonConfig.size / 5)}px`
+                        }}
                     >
-                        <div 
-                            onMouseDown={handleDragStart}
-                            onTouchStart={handleDragStart}
-                            className="absolute bg-red-600/80 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg select-none cursor-grab active:cursor-grabbing active:scale-105"
-                            style={{
-                                width: fireButtonConfig.size,
-                                height: fireButtonConfig.size,
-                                bottom: fireButtonConfig.bottom,
-                                right: fireButtonConfig.right,
-                                fontSize: `${Math.max(12, fireButtonConfig.size / 5)}px`
-                            }}
-                        >
-                        FIRE
-                        </div>
-                        <p className="absolute top-2 left-3 text-xs text-brand-text-muted pointer-events-none">Drag to move, use slider for size.</p>
+                    FIRE
                     </div>
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-brand-text-muted text-center pointer-events-none">
+                        <p className="font-semibold">Adjustment Plane</p>
+                        <p className="text-xs">Drag the button to position it.</p>
+                    </div>
+                </div>
 
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-brand-text-muted mb-2">Size ({fireButtonConfig.size}px)</label>
-                            <input 
-                                type="range" min="60" max="140" 
-                                value={fireButtonConfig.size} 
-                                onChange={(e) => setFireButtonConfig(prev => ({ ...prev, size: parseInt(e.target.value) }))} 
-                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                            />
-                        </div>
+                {/* Control Panel */}
+                <div
+                    className="bg-brand-surface/80 backdrop-blur-md p-6 rounded-lg w-full max-w-lg shadow-2xl border border-gray-600"
+                    onMouseDown={e => e.stopPropagation()}
+                    onTouchStart={e => e.stopPropagation()}
+                >
+                    <h3 className="text-xl font-bold text-white mb-4">Customize Fire Button</h3>
+                    <div>
+                        <label className="block text-sm font-medium text-brand-text-muted mb-2">Size ({fireButtonConfig.size}px)</label>
+                        <input
+                            type="range" min="60" max="140"
+                            value={fireButtonConfig.size}
+                            onChange={(e) => setFireButtonConfig(prev => ({ ...prev, size: parseInt(e.target.value) }))}
+                            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                        />
                     </div>
-                    
-                    <button onClick={() => { setIsCustomizing(false); handleDragEnd(); }} className="w-full mt-8 px-6 py-3 rounded-lg font-semibold text-black bg-brand-primary hover:bg-cyan-400 transition-colors duration-300">
+                    <button
+                        onClick={() => { setIsCustomizing(false); handleDragEnd(); }}
+                        className="w-full mt-6 px-6 py-3 rounded-lg font-semibold text-black bg-brand-primary hover:bg-cyan-400 transition-colors duration-300"
+                    >
                         Done
                     </button>
                 </div>
@@ -721,8 +737,8 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
           <div 
             className="absolute z-20"
             style={{
-                bottom: `${fireButtonConfig.bottom}px`,
-                right: `${fireButtonConfig.right}px`,
+                bottom: `${fireButtonConfig.bottom}%`,
+                right: `${fireButtonConfig.right}%`,
             }}
             >
             <button
