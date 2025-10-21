@@ -1,5 +1,5 @@
 {
-  "name": "Game_Sense_AI",
+  "name": "Copy of Game_Sense_AI 2",
   "description": "An AI-powered application to help gamers analyze their in-game sensitivity and aim by analyzing screen recordings.",
   "requestFramePermissions": [
     "microphone"

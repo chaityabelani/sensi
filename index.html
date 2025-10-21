@@ -5,7 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Game Sense AI</title>
-    <meta name="theme-color" content="#111827" />
+    <meta name="theme-color" content="#0f172a" />
     <link rel="apple-touch-icon" href="icon-192x192.png">
     <link rel="manifest" href="manifest.json" />
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,46 +14,88 @@
         theme: {
           extend: {
             colors: {
-              'brand-bg': '#111827',
-              'brand-surface': '#1F2937',
-              'brand-primary': '#22D3EE',
-              'brand-secondary': '#818CF8',
-              'brand-text': '#E5E7EB',
-              'brand-text-muted': '#9CA3AF',
+              'brand-bg': '#0f172a', // slate-900
+              'brand-surface': '#1e293b', // slate-800
+              'brand-panel': '#334155', // slate-700
+              'brand-primary': '#22d3ee', // cyan-400
+              'brand-secondary': '#8b5cf6', // violet-500
+              'brand-text': '#e2e8f0', // slate-200
+              'brand-text-muted': '#94a3b8', // slate-400
             },
             animation: {
+              'fade-in-up': 'fade-in-up 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards',
               'pulse-target': 'pulse-target 2s ease-in-out infinite',
               'spawn-target': 'spawn-target 0.2s ease-out forwards',
               'destroy-target': 'destroy-target 0.2s ease-in forwards',
               'hit-feedback': 'hit-feedback 0.4s ease-out forwards',
               'miss-feedback': 'miss-feedback 0.4s ease-out forwards',
+              'glow-primary': 'glow-primary 2.5s ease-in-out infinite',
+              'draw': 'draw 1s 0.2s ease-out forwards',
+              'grow-up': 'grow-up 0.5s ease-out forwards',
+              'hex-bg': 'hex-bg 30s linear infinite',
+              'loader-spin': 'loader-spin 1.5s linear infinite',
             },
             keyframes: {
+              'fade-in-up': {
+                '0%': { opacity: 0, transform: 'translateY(30px) scale(0.98)' },
+                '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
+              },
               'pulse-target': {
-                '0%, 100%': { transform: 'scale(1)' },
-                '50%': { transform: 'scale(1.05)' },
+                '0%, 100%': { transform: 'scale(1)', filter: 'drop-shadow(0 0 8px theme(colors.brand-primary))' },
+                '50%': { transform: 'scale(1.05)', filter: 'drop-shadow(0 0 16px theme(colors.brand-primary))' },
               },
               'spawn-target': {
-                '0%': { transform: 'scale(0.5)', opacity: 0 },
-                '100%': { transform: 'scale(1)', opacity: 1 },
+                '0%': { transform: 'translate(-50%, -50%) scale(0.5) rotate(-180deg)', opacity: 0 },
+                '100%': { transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', opacity: 1 },
               },
               'destroy-target': {
-                '0%': { transform: 'scale(1)', opacity: 1 },
-                '100%': { transform: 'scale(0)', opacity: 0 },
+                '0%': { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+                '100%': { transform: 'translate(-50%, -50%) scale(0)', opacity: 0 },
               },
               'hit-feedback': {
                 '0%': { transform: 'scale(0.8)', opacity: 1 },
                 '100%': { transform: 'scale(1.5)', opacity: 0 },
               },
               'miss-feedback': {
-                '0%': { transform: 'scale(0)', opacity: 0.7, 'border-width': '4px' },
+                 '0%': { transform: 'scale(0)', opacity: 0.7, 'border-width': '4px' },
                 '100%': { transform: 'scale(1)', opacity: 0, 'border-width': '0px' },
+              },
+              'glow-primary': {
+                '0%, 100%': { 'box-shadow': '0 0 15px -5px theme(colors.brand-primary)' },
+                '50%': { 'box-shadow': '0 0 30px 5px theme(colors.brand-primary)' },
+              },
+              'draw': {
+                'to': { 'stroke-dashoffset': 0 },
+              },
+              'grow-up': {
+                '0%': { transform: 'scaleY(0)', 'transform-origin': 'bottom' },
+                '100%': { transform: 'scaleY(1)', 'transform-origin': 'bottom' },
+              },
+              'hex-bg': {
+                '0%': { 'background-position': '0 0' },
+                '100%': { 'background-position': '-140px 0' },
+              },
+              'loader-spin': {
+                '100%': { transform: 'rotate(360deg)' }
               }
             }
           },
         },
       }
     </script>
+    <style>
+      body {
+        background-color: #0f172a;
+        --hex-color: rgba(30, 41, 59, 0.5); /* slate-800 with opacity */
+        background-image:
+          radial-gradient(circle at center, transparent, #0f172a 70%),
+          linear-gradient(90deg, transparent 49.5%, var(--hex-color) 49.5%, var(--hex-color) 50.5%, transparent 50.5%),
+          linear-gradient(30deg, transparent 49.5%, var(--hex-color) 49.5%, var(--hex-color) 50.5%, transparent 50.5%),
+          linear-gradient(-30deg, transparent 49.5%, var(--hex-color) 49.5%, var(--hex-color) 50.5%, transparent 50.5%);
+        background-size: 70px 120px;
+        animation: hex-bg 30s linear infinite;
+      }
+    </style>
   <script type="importmap">
 {
   "imports": {

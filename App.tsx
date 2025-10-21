@@ -1,12 +1,10 @@
-
-
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Bot, Github } from 'lucide-react';
 import { AppStage } from './types';
 import type { Game, AnalysisResponse } from './types';
 import { analyzeGameplay, extractFramesFromVideo } from './services/geminiService';
 
-import GameSelector from './components/GameSelector';
+import Home from './components/Home';
 import ScreenRecorder from './components/ScreenRecorder';
 import Loader from './components/Loader';
 import AnalysisDisplay from './components/AnalysisDisplay';
@@ -82,9 +80,9 @@ const App: React.FC = () => {
         setProgress({ message, percentage: scaledPercentage });
       };
 
-      setProgress({ message: 'Extracting key frames...', percentage: 0 });
+      setProgress({ message: 'Isolating key tactical frames...', percentage: 0 });
       const frames = await extractFramesFromVideo(blob, 10, (progress) => {
-        frameExtractionProgress("Extracting key frames...", progress * 100);
+        frameExtractionProgress("Isolating key tactical frames...", progress * 100);
       });
 
       if (frames.length === 0) {
@@ -133,7 +131,7 @@ const App: React.FC = () => {
   const renderContent = useMemo(() => {
     switch (stage) {
       case AppStage.SELECT_GAME:
-        return <GameSelector onSelectGame={handleGameSelect} onStartPractice={handleStartPractice} />;
+        return <Home onSelectGame={handleGameSelect} onStartPractice={handleStartPractice} />;
       case AppStage.RECORD_GAME:
         if (selectedGame) {
           return <ScreenRecorder onRecordingComplete={handleRecordingComplete} onBack={handleReset} gameName={selectedGame.name} />;
@@ -159,24 +157,26 @@ const App: React.FC = () => {
   }, [stage, selectedGame, analysisResult, videoFrames, error, progress, remainingTime, handleGameSelect, handleStartPractice, handleRecordingComplete, handleReset]);
 
   return (
-    <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
-        <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center">
-            <div className="flex items-center space-x-2">
-                <Bot className="h-8 w-8 text-brand-primary"/>
-                <h1 className="text-lg sm:text-xl font-bold text-white">Game Sense AI</h1>
-            </div>
-             <a href="https://github.com/google/genai-js" target="_blank" rel="noopener noreferrer" className="text-brand-text-muted hover:text-brand-primary transition-colors">
-                <Github size={24} />
-            </a>
-        </header>
+    <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-between p-4 sm:p-6 lg:p-8 font-sans">
+      <header className="w-full max-w-7xl mx-auto p-4 flex justify-between items-center bg-brand-bg/50 backdrop-blur-sm rounded-xl border border-brand-panel/50 z-10">
+          <div className="flex items-center space-x-3">
+              <Bot className="h-8 w-8 text-brand-primary"/>
+              <h1 className="text-xl sm:text-2xl font-bold text-brand-text tracking-wider">Game Sense AI</h1>
+          </div>
+            <a href="https://github.com/google/genai-js" target="_blank" rel="noopener noreferrer" className="text-brand-text-muted hover:text-brand-primary transition-colors p-2 rounded-full hover:bg-brand-surface">
+              <Github size={24} />
+          </a>
+      </header>
 
-      <main className="w-full max-w-4xl flex-grow flex items-center justify-center">
-        {renderContent}
+      <main className="w-full max-w-7xl flex-grow flex items-center justify-center py-8">
+        <div className="w-full animate-fade-in-up">
+            {renderContent}
+        </div>
       </main>
       
-      <footer className="w-full text-center p-4 mt-8">
+      <footer className="w-full text-center p-4">
         <p className="text-sm text-brand-text-muted">
-            Select a game, record your screen, and get AI-powered feedback to improve your aim.
+           High-tier AI performance analysis for every gamer.
         </p>
       </footer>
     </div>

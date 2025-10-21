@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Video, VideoOff, Mic, MicOff, UploadCloud, ArrowLeft, Lightbulb, Focus, Clock, Target } from 'lucide-react';
+import { Video, UploadCloud, ArrowLeft, Lightbulb, Focus, Clock, Target, Play } from 'lucide-react';
 
 interface ScreenRecorderProps {
   onRecordingComplete: (blob: Blob, sensitivity: number | null) => void;
@@ -9,7 +9,6 @@ interface ScreenRecorderProps {
 
 const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, onBack, gameName }) => {
   const [isRecording, setIsRecording] = useState(false);
-  const [includeAudio, setIncludeAudio] = useState(true);
   const [sensitivity, setSensitivity] = useState('');
   const [error, setError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -38,7 +37,7 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { cursor: "always" } as MediaTrackConstraints,
-        audio: includeAudio,
+        audio: false, // Audio is not needed for analysis, simplifying permissions
       });
       streamRef.current = stream;
 
@@ -46,7 +45,7 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
         stopRecording();
       };
       
-      mediaRecorderRef.current = new MediaRecorder(stream);
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'video/webm' });
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
           recordedChunksRef.current.push(event.data);
@@ -67,14 +66,6 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
       }
     }
   };
-
-  const handleToggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
   
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -92,116 +83,100 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
     }
   };
 
-
   return (
-    <div className="relative flex flex-col items-center justify-center p-8 bg-brand-surface rounded-xl shadow-lg border border-gray-700 max-w-2xl mx-auto w-full">
+    <div className="relative flex flex-col items-center justify-center p-6 sm:p-8 bg-brand-surface/80 backdrop-blur-md rounded-xl shadow-2xl border border-brand-panel max-w-4xl mx-auto w-full">
       <button
         onClick={onBack}
-        className="absolute top-4 left-4 text-brand-text-muted hover:text-white transition-colors p-2 rounded-full hover:bg-white/10"
-        aria-label="Go back to game selection"
+        className="absolute top-4 left-4 text-brand-text-muted hover:text-brand-primary transition-colors p-2 rounded-full hover:bg-brand-panel"
+        aria-label="Go back"
         >
         <ArrowLeft size={24} />
       </button>
 
-      <h2 className="text-2xl font-bold text-white mb-2 text-center">Analyze Gameplay for {gameName}</h2>
-      <p className="text-brand-text-muted text-center mb-6">
-        Provide a short clip (1-2 minutes) of your gameplay. For more accurate feedback, enter your sensitivity.
+      <h2 className="text-3xl font-bold text-brand-text mb-2 text-center tracking-tighter">Gameplay Analysis</h2>
+      <p className="text-brand-text-muted text-center mb-8">
+        Submit a short clip (1-2 mins) for AI-powered feedback.
       </p>
       
-       <div className="w-full mb-6">
-        <label htmlFor="sensitivity" className="block text-sm font-medium text-brand-text-muted mb-2 flex items-center">
-            <Target size={16} className="mr-2 text-brand-secondary" />
-            In-Game Sensitivity (Optional)
-        </label>
-        <input
-            type="number"
-            name="sensitivity"
-            id="sensitivity"
-            value={sensitivity}
-            onChange={(e) => setSensitivity(e.target.value)}
-            className="bg-gray-800/50 border border-gray-600 text-white text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-2.5"
-            placeholder="e.g., 0.45"
-            step="0.01"
-        />
-      </div>
-
-      <div className="w-full bg-gray-800/50 rounded-lg border border-gray-700 p-6 mb-8 text-left">
-        <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
-          <Lightbulb size={20} className="mr-2 text-yellow-400" />
-          Pro Tips & Limitations
-        </h3>
-        <ul className="space-y-3 text-brand-text-muted text-sm">
-          <li className="flex items-start">
-            <Video size={16} className="mr-3 mt-1 text-brand-primary flex-shrink-0" />
-            <span><strong>Quality In, Quality Out:</strong> For best results, use a clear, smooth video (720p+, 30fps+). Choppy or low-res clips are harder for the AI to analyze accurately.</span>
-          </li>
-          <li className="flex items-start">
-            <Focus size={16} className="mr-3 mt-1 text-brand-primary flex-shrink-0" />
-            <span><strong>Show a Typical Fight:</strong> The AI needs action! A clip showing a gunfight, including aiming and movement, provides the most useful data.</span>
-          </li>
-          <li className="flex items-start">
-            <Clock size={16} className="mr-3 mt-1 text-brand-primary flex-shrink-0" />
-            <span><strong>Keep it Short:</strong> This tool is optimized for short clips (under 2 minutes). Longer videos may fail to process due to browser limitations.</span>
-          </li>
-        </ul>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-        {/* Recording Section */}
-        <div className="flex flex-col items-center p-6 bg-gray-800/50 rounded-lg border border-gray-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Record Gameplay</h3>
-          <div className="flex space-x-4">
-            <button
-              onClick={handleToggleRecording}
-              disabled={!!error && error.includes('permission was denied')}
-              className={`px-6 py-3 rounded-lg font-semibold text-white transition-all duration-300 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                isRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-primary hover:bg-cyan-500'
-              }`}
-            >
-              {isRecording ? <VideoOff size={20} /> : <Video size={20} />}
-              <span>{isRecording ? 'Stop' : 'Record'}</span>
-            </button>
-            <button
-              onClick={() => setIncludeAudio(!includeAudio)}
-              disabled={isRecording}
-              className="p-3 rounded-lg bg-gray-600 hover:bg-gray-500 text-white transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label={includeAudio ? 'Disable microphone' : 'Enable microphone'}
-            >
-              {includeAudio ? <Mic size={20} /> : <MicOff size={20} />}
-            </button>
-          </div>
+      <div className="w-full grid grid-cols-1 lg:grid-cols-5 gap-8">
+        {/* Left Column: Config & Tips */}
+        <div className="lg:col-span-2 space-y-6">
+            <div>
+              <label htmlFor="sensitivity" className="block text-sm font-medium text-brand-text-muted mb-2 flex items-center">
+                  <Target size={16} className="mr-2 text-brand-secondary" />
+                  In-Game Sensitivity (Optional)
+              </label>
+              <input
+                  type="number"
+                  name="sensitivity"
+                  id="sensitivity"
+                  value={sensitivity}
+                  onChange={(e) => setSensitivity(e.target.value)}
+                  className="bg-brand-bg border border-brand-panel text-brand-text text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-3 placeholder-brand-text-muted/50"
+                  placeholder="e.g., 0.45"
+                  step="0.01"
+              />
+            </div>
+            
+            <div className="w-full bg-brand-bg/50 rounded-lg border border-brand-panel p-4 text-left">
+              <h3 className="text-md font-semibold text-brand-text mb-3 flex items-center">
+                <Lightbulb size={18} className="mr-2 text-yellow-400" />
+                System Alert: Best Practices
+              </h3>
+              <ul className="space-y-2 text-brand-text-muted text-xs">
+                <li className="flex items-start"><Video size={14} className="mr-2 mt-0.5 text-brand-primary flex-shrink-0" /><span>Use clear, smooth footage (720p+, 30fps+).</span></li>
+                <li className="flex items-start"><Focus size={14} className="mr-2 mt-0.5 text-brand-primary flex-shrink-0" /><span>Capture a typical gunfight with aiming and movement.</span></li>
+                <li className="flex items-start"><Clock size={14} className="mr-2 mt-0.5 text-brand-primary flex-shrink-0" /><span>Keep clips under 2 minutes for best results.</span></li>
+              </ul>
+            </div>
         </div>
 
-        {/* Upload Section */}
-        <div className="flex flex-col items-center p-6 bg-gray-800/50 rounded-lg border border-gray-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Upload a Clip</h3>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept="video/*"
-            className="hidden"
-          />
-          <button
-            onClick={handleUploadClick}
-            disabled={isRecording}
-            className="px-6 py-3 rounded-lg font-semibold text-white transition-all duration-300 flex items-center space-x-2 bg-brand-secondary hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <UploadCloud size={20} />
-            <span>Choose File</span>
-          </button>
+        {/* Right Column: Actions */}
+        <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="flex flex-col items-center justify-center p-6 bg-brand-bg/50 rounded-lg border border-brand-panel">
+                <h3 className="text-lg font-semibold text-brand-text mb-4">Record New Clip</h3>
+                <button
+                onClick={startRecording}
+                disabled={isRecording}
+                className="w-full px-6 py-4 rounded-lg font-semibold text-black transition-all duration-300 flex items-center justify-center space-x-2 bg-brand-primary hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-primary/40"
+                >
+                <Video size={20} />
+                <span>Start Recording</span>
+                </button>
+            </div>
+
+            <div className="flex flex-col items-center justify-center p-6 bg-brand-bg/50 rounded-lg border border-brand-panel">
+                <h3 className="text-lg font-semibold text-brand-text mb-4">Upload Existing File</h3>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept="video/*"
+                    className="hidden"
+                />
+                <button
+                    onClick={handleUploadClick}
+                    disabled={isRecording}
+                    className="w-full px-6 py-4 rounded-lg font-semibold text-brand-text transition-all duration-300 flex items-center justify-center space-x-2 bg-brand-panel hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-1 hover:shadow-lg hover:shadow-brand-secondary/40"
+                >
+                    <UploadCloud size={20} />
+                    <span>Choose File</span>
+                </button>
+            </div>
         </div>
       </div>
-
 
       {isRecording && (
-        <div className="mt-6 flex items-center space-x-2 text-yellow-400">
-          <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+        <div className="mt-6 flex items-center space-x-3 text-yellow-400 p-3 bg-yellow-900/50 rounded-lg border border-yellow-400/30">
+          <div className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+          </div>
           <span>Recording in progress... Stop sharing in your browser to finish.</span>
         </div>
       )}
 
-      {error && <p className="mt-6 text-red-400 text-center">{error}</p>}
+      {error && <p className="mt-6 text-red-400 text-center bg-red-900/50 p-3 rounded-lg border border-red-500/30">{error}</p>}
     </div>
   );
 };

@@ -1,7 +1,5 @@
-
-
 import React from 'react';
-import { Home } from 'lucide-react';
+import { Home, Bot } from 'lucide-react';
 import type { Game, AnalysisResponse } from '../types';
 import FrameVisualizer from './FrameVisualizer';
 
@@ -14,32 +12,20 @@ interface AnalysisDisplayProps {
 
 const FormattedAnalysis: React.FC<{ text: string }> = ({ text }) => {
   return (
-    <div className="text-left space-y-4">
+    <div className="text-left space-y-4 prose prose-invert prose-sm max-w-none prose-p:text-brand-text-muted prose-headings:text-brand-primary prose-strong:text-brand-text prose-li:marker:text-brand-secondary">
       {text.split('\n').map((line, index) => {
         line = line.trim();
         if (line === '') return null;
 
-        // Handle bold headers like **Sensei's Analysis:**
         if (line.startsWith('**') && line.endsWith('**')) {
-          return (
-            <h3 key={index} className="text-xl font-bold text-brand-primary mt-6 mb-2">
-              {line.substring(2, line.length - 2)}
-            </h3>
-          );
+          return <h3 key={index} className="text-xl font-bold tracking-tight mt-6 mb-2">{line.substring(2, line.length - 2)}</h3>;
         }
         
-        // Handle list items like * Tip...
         if (line.startsWith('* ')) {
-          return (
-            <div key={index} className="flex items-start pl-2">
-              <span className="mr-3 mt-1 text-brand-secondary">•</span>
-              <p className="text-brand-text flex-1">{line.substring(2)}</p>
-            </div>
-          );
+          return <div key={index} className="flex items-start"><span className="mr-3 mt-1.5 text-brand-secondary text-lg leading-none">•</span><p className="flex-1 m-0">{line.substring(2)}</p></div>;
         }
 
-        // Handle normal paragraphs
-        return <p key={index} className="text-brand-text-muted">{line}</p>;
+        return <p key={index} className="m-0">{line}</p>;
       })}
     </div>
   );
@@ -48,35 +34,39 @@ const FormattedAnalysis: React.FC<{ text: string }> = ({ text }) => {
 
 const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ analysis, game, onReset, frames }) => {
   return (
-    <div className="w-full max-w-3xl mx-auto bg-brand-surface rounded-xl shadow-2xl border border-gray-700 overflow-hidden">
+    <div className="w-full max-w-7xl mx-auto bg-brand-surface/80 backdrop-blur-md rounded-xl shadow-2xl border border-brand-panel overflow-hidden">
       <div className="p-6 sm:p-8">
-        <div className="flex flex-col sm:flex-row items-center justify-between mb-6 pb-6 border-b border-gray-700">
+        <div className="flex flex-col sm:flex-row items-center justify-between mb-6 pb-6 border-b border-brand-panel">
             <div className="flex items-center space-x-4">
-                <div className="w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center">{game.logo}</div>
+                <div className="w-16 h-16 flex items-center justify-center text-brand-primary">{game.logo}</div>
                 <div>
-                  <h2 className="text-2xl sm:text-3xl font-bold text-white">Analysis for {game.name}</h2>
-                  <p className="text-brand-text-muted">Powered by Sensei AI</p>
+                  <h2 className="text-3xl font-bold text-brand-text tracking-tighter">Debriefing Report</h2>
+                  <p className="text-brand-text-muted flex items-center space-x-2"><Bot size={16}/><span>Analysis by Sensei AI</span></p>
                 </div>
             </div>
           <button
             onClick={onReset}
-            className="mt-4 sm:mt-0 flex items-center px-4 py-2 bg-brand-primary text-black rounded-lg hover:bg-cyan-400 transition-colors duration-300 font-semibold w-full sm:w-auto justify-center"
+            className="mt-4 sm:mt-0 flex items-center px-5 py-2.5 bg-brand-panel text-brand-text rounded-lg hover:bg-slate-600 transition-all duration-300 font-semibold w-full sm:w-auto justify-center transform hover:-translate-y-0.5"
           >
             <Home size={16} className="mr-2" />
-            Return to Home
+            New Session
           </button>
         </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Left Column: Text Analysis */}
+            <div className="bg-brand-bg/50 p-6 rounded-lg border border-brand-panel h-fit">
+                <FormattedAnalysis text={analysis.analysis} />
+            </div>
 
-        <div className="p-2">
-          <FormattedAnalysis text={analysis.analysis} />
+            {/* Right Column: Visualizer */}
+            {frames && frames.length > 0 && analysis.visual_data && (
+                <FrameVisualizer frames={frames} visualData={analysis.visual_data} />
+            )}
         </div>
         
-        {frames && frames.length > 0 && analysis.visual_data && (
-           <FrameVisualizer frames={frames} visualData={analysis.visual_data} />
-        )}
-        
-         <p className="text-xs text-brand-text-muted text-center mt-8 pt-4 border-t border-gray-700">
-            Disclaimer: This AI analysis is based on a few frames from your video and is intended as a helpful suggestion. Your own feeling and continued practice are most important.
+         <p className="text-xs text-brand-text-muted text-center mt-8 pt-4 border-t border-brand-panel">
+            Disclaimer: AI analysis is a supplementary tool. Your personal comfort and consistent practice are paramount for improvement.
          </p>
       </div>
     </div>
