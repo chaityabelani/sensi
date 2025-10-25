@@ -2,9 +2,10 @@ import React, { useRef, useEffect, useState } from 'react';
 
 interface RecoilPatternDisplayProps {
   pattern: { x: number; y: number }[];
+  title?: string;
 }
 
-const RecoilPatternDisplay: React.FC<RecoilPatternDisplayProps> = ({ pattern }) => {
+const RecoilPatternDisplay: React.FC<RecoilPatternDisplayProps> = ({ pattern, title = "Aim Drift Pattern" }) => {
   const pathRef = useRef<SVGPathElement>(null);
   const [pathLength, setPathLength] = useState(0);
 
@@ -18,7 +19,7 @@ const RecoilPatternDisplay: React.FC<RecoilPatternDisplayProps> = ({ pattern }) 
   if (pattern.length < 2) {
     return (
       <div className="flex flex-col items-center justify-center h-full">
-        <h4 className="text-lg font-semibold text-brand-text mb-2 text-center">Aim Drift Pattern</h4>
+        <h4 className="text-lg font-semibold text-brand-text mb-2 text-center">{title}</h4>
         <div className="flex items-center justify-center flex-grow w-full bg-brand-bg/30 rounded-lg">
             <p className="text-brand-text-muted">Not enough miss data to display pattern.</p>
         </div>
@@ -56,7 +57,7 @@ const RecoilPatternDisplay: React.FC<RecoilPatternDisplayProps> = ({ pattern }) 
 
   return (
     <div className="w-full h-full flex flex-col">
-      <h4 className="text-lg font-semibold text-brand-text mb-2 text-center">Aim Drift Pattern</h4>
+      <h4 className="text-lg font-semibold text-brand-text mb-2 text-center">{title}</h4>
       <div className="flex-grow flex items-center justify-center">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto max-w-[250px] mx-auto bg-brand-bg/30 rounded-lg" aria-labelledby="recoil-title" role="img">
           <title id="recoil-title">A line chart showing the drift of your aim during consecutive misses.</title>

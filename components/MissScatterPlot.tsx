@@ -8,13 +8,14 @@ interface MissData {
 interface MissScatterPlotProps {
   misses: MissData[];
   targetSize: number;
+  title?: string;
 }
 
-const MissScatterPlot: React.FC<MissScatterPlotProps> = ({ misses, targetSize }) => {
+const MissScatterPlot: React.FC<MissScatterPlotProps> = ({ misses, targetSize, title = "Miss Distribution" }) => {
     if (misses.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center h-full">
-                <h4 className="text-lg font-semibold text-brand-text mb-2 text-center">Miss Distribution</h4>
+                <h4 className="text-lg font-semibold text-brand-text mb-2 text-center">{title}</h4>
                 <div className="flex items-center justify-center flex-grow w-full bg-brand-bg/30 rounded-lg">
                     <p className="text-brand-text-muted">No misses recorded. Perfect accuracy!</p>
                 </div>
@@ -34,7 +35,7 @@ const MissScatterPlot: React.FC<MissScatterPlotProps> = ({ misses, targetSize })
 
     return (
         <div className="w-full h-full flex flex-col">
-            <h4 className="text-lg font-semibold text-brand-text mb-2 text-center">Miss Distribution</h4>
+            <h4 className="text-lg font-semibold text-brand-text mb-2 text-center">{title}</h4>
             <div className="flex-grow flex flex-col items-center justify-center">
                  <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-auto max-w-[250px] mx-auto" aria-labelledby="scatter-title" role="img">
                     <title id="scatter-title">A scatter plot showing where misses landed relative to the target's center.</title>

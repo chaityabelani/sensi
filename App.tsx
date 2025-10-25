@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Bot, Github } from 'lucide-react';
 import { AppStage } from './types';
 import type { Game, AnalysisResponse } from './types';
 import { analyzeGameplay, extractFramesFromVideo } from './services/geminiService';
@@ -158,14 +157,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-between p-4 sm:p-6 lg:p-8 font-sans">
-      <header className="w-full max-w-7xl mx-auto p-4 flex justify-between items-center bg-brand-bg/50 backdrop-blur-sm rounded-xl border border-brand-panel/50 z-10">
-          <div className="flex items-center space-x-3">
-              <Bot className="h-8 w-8 text-brand-primary"/>
-              <h1 className="text-xl sm:text-2xl font-bold text-brand-text tracking-wider">Game Sense AI</h1>
-          </div>
-            <a href="https://github.com/google/genai-js" target="_blank" rel="noopener noreferrer" className="text-brand-text-muted hover:text-brand-primary transition-colors p-2 rounded-full hover:bg-brand-surface">
-              <Github size={24} />
-          </a>
+      <header className="w-full max-w-7xl mx-auto p-4 flex justify-center items-center bg-brand-bg/50 backdrop-blur-sm rounded-xl border border-brand-panel/50 z-10">
+          <h1 className="text-xl sm:text-2xl font-bold text-brand-text tracking-wider">Game Sense AI</h1>
       </header>
 
       <main className="w-full max-w-7xl flex-grow flex items-center justify-center py-8">
