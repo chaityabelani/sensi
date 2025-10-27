@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, RefreshCw, Target as TargetIcon, Timer, MousePointerClick, Percent, Move, Waves } from 'lucide-react';
+import { ArrowLeft, Play, RefreshCw, Target as TargetIcon, Timer, MousePointerClick, Percent, Move, Waves, Flame } from 'lucide-react';
 import HitTimeChart from './HitTimeChart';
 import MissScatterPlot from './MissScatterPlot';
 import HitTimeDistributionChart from './HitTimeDistributionChart';
@@ -23,49 +23,57 @@ interface MissData {
     offsetY: number;
 }
 
-interface SprayPoint {
-    id: number;
-    x: number;
-    y: number;
-}
-
 // Props
 interface AimTrainerProps {
   onBack: () => void;
 }
 
 // Constants
-const GAME_DURATION = 30; // 30 seconds for static/moving
 const TARGET_SIZE = 50; // pixels
-const TARGET_SPEED = 3; // pixels per frame for moving targets
 const RECOIL_TARGET_SIZE = 30;
+const SPRAY_INTERVAL = 80; // ms between "shots" - now used for pattern timing
+const DURATION_OPTIONS = [20, 30, 60, 90, 120];
 
-// Recoil Mode Constants
-const RECOIL_ROUND_DURATION = 15;
-const TOTAL_RECOIL_DURATION = RECOIL_ROUND_DURATION * 2;
-const SPRAY_INTERVAL = 80; // ms between "shots"
+const TARGET_SPEEDS: Record<string, { name: string; value: number }> = {
+    slow: { name: 'Slow', value: 2 },
+    medium: { name: 'Medium', value: 4 },
+    fast: { name: 'Fast', value: 6 },
+};
 
 // Realistic recoil patterns for a more authentic training experience
 const scalePattern = (pattern: {x:number, y:number}[], scale: number) => pattern.map(p => ({ x: p.x * scale, y: p.y * scale }));
 
-// Vertical Round: Target moves mostly up, with slight horizontal sway. User must pull down.
-const VERTICAL_RECOIL_PATTERN_RAW = Array.from({ length: 40 }, (_, i) => ({
-  x: Math.sin(i / 5) * i * 0.1,
-  y: -i * 1.2,
+// Assault Rifle: Classic '7' pattern. Strong vertical, then veers right.
+const AR_PATTERN_RAW = Array.from({ length: 30 }, (_, i) => ({
+  x: i > 10 ? (i - 10) * 0.8 : Math.sin(i / 5) * 0.5,
+  y: -i * 1.5,
 }));
-const VERTICAL_RECOIL_PATTERN = scalePattern(VERTICAL_RECOIL_PATTERN_RAW, 2.5);
 
-// Horizontal Round: Target moves side-to-side, with slight upward drift. User must counteract horizontally.
-const HORIZONTAL_RECOIL_PATTERN_RAW = Array.from({ length: 40 }, (_, i) => ({
-  x: Math.sin(i / 2.5) * i * 0.6,
-  y: -i * 0.2,
+// SMG: Fast, erratic horizontal sway with moderate vertical climb.
+const SMG_PATTERN_RAW = Array.from({ length: 40 }, (_, i) => ({
+  x: Math.sin(i / 2) * i * 0.4,
+  y: -i * 0.8,
 }));
-const HORIZONTAL_RECOIL_PATTERN = scalePattern(HORIZONTAL_RECOIL_PATTERN_RAW, 2.5);
 
-const getActivePattern = (round: 'horizontal' | 'vertical' | null) => {
-    if (round === 'horizontal') return HORIZONTAL_RECOIL_PATTERN;
-    if (round === 'vertical') return VERTICAL_RECOIL_PATTERN;
-    return [];
+// LMG: Slow initial climb, then accelerates with heavy, wide sway.
+const LMG_PATTERN_RAW = Array.from({ length: 50 }, (_, i) => ({
+    x: i > 15 ? Math.sin(i / 4) * (i - 15) * 0.5 : 0,
+    y: -Math.pow(i, 1.2) * 0.8
+}));
+
+const RECOIL_PATTERNS: Record<string, { name: string; pattern: {x: number, y: number}[] }> = {
+    ar: {
+        name: 'Assault Rifle',
+        pattern: scalePattern(AR_PATTERN_RAW, 2.8),
+    },
+    smg: {
+        name: 'SMG',
+        pattern: scalePattern(SMG_PATTERN_RAW, 2.5),
+    },
+    lmg: {
+        name: 'LMG',
+        pattern: scalePattern(LMG_PATTERN_RAW, 2.2),
+    },
 };
 
 
@@ -79,20 +87,22 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const [misses, setMisses] = useState(0);
   const [hitTimes, setHitTimes] = useState<number[]>([]);
   const [missData, setMissData] = useState<MissData[]>([]);
-  
+  const [currentCombo, setCurrentCombo] = useState(0);
+  const [maxCombo, setMaxCombo] = useState(0);
+  const [targetSpeed, setTargetSpeed] = useState(TARGET_SPEEDS.medium.value);
+
   // Recoil state
-  const [recoilRound, setRecoilRound] = useState<'horizontal' | 'vertical' | null>(null);
-  const [roundTransition, setRoundTransition] = useState<{show: boolean, text: string}>({show: false, text: ''});
-  const [sprayDataHorizontal, setSprayDataHorizontal] = useState<MissData[]>([]);
-  const [sprayDataVertical, setSprayDataVertical] = useState<MissData[]>([]);
-  const [recoilControlScoreHorizontal, setRecoilControlScoreHorizontal] = useState(0);
-  const [recoilControlScoreVertical, setRecoilControlScoreVertical] = useState(0);
+  const [selectedPattern, setSelectedPattern] = useState<string>('ar');
+  const [isTracking, setIsTracking] = useState(false);
+  const [crosshairPath, setCrosshairPath] = useState<{x: number, y: number}[]>([]);
+  const [trackingScore, setTrackingScore] = useState(0);
+  const [trackingSamples, setTrackingSamples] = useState(0);
   const [recoilTargetPosition, setRecoilTargetPosition] = useState<{ x: number; y: number } | null>(null);
-  const [currentSprayPoints, setCurrentSprayPoints] = useState<SprayPoint[]>([]);
 
   // Shared state
+  const [gameDuration, setGameDuration] = useState(30);
   const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
+  const [timeLeft, setTimeLeft] = useState(gameDuration);
   const [countdown, setCountdown] = useState(3);
   
   // Refs
@@ -100,19 +110,16 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const timerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const sprayIntervalRef = useRef<number | null>(null);
-  const sprayStartTimeRef = useRef<number | null>(null);
+  const trackStartTimeRef = useRef<number | null>(null);
   const mousePositionRef = useRef<{ x: number; y: number } | null>(null);
 
   const clearTimers = useCallback(() => {
     if (timerRef.current) window.clearInterval(timerRef.current);
     if (countdownTimerRef.current) window.clearInterval(countdownTimerRef.current);
     if (animationFrameRef.current) window.cancelAnimationFrame(animationFrameRef.current);
-    if (sprayIntervalRef.current) window.clearInterval(sprayIntervalRef.current);
     timerRef.current = null;
     countdownTimerRef.current = null;
     animationFrameRef.current = null;
-    sprayIntervalRef.current = null;
   }, []);
   
   const spawnTarget = useCallback(() => {
@@ -124,8 +131,8 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         let newVx = 0, newVy = 0;
         if (gameMode === 'moving') {
             const angle = Math.random() * 2 * Math.PI;
-            newVx = Math.cos(angle) * TARGET_SPEED;
-            newVy = Math.sin(angle) * TARGET_SPEED;
+            newVx = Math.cos(angle) * targetSpeed;
+            newVy = Math.sin(angle) * targetSpeed;
         }
 
         setTargets([{
@@ -135,29 +142,28 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
             vx: newVx, vy: newVy, size: TARGET_SIZE, spawnTime: performance.now(),
         }]);
     });
-  }, [gameMode]);
+  }, [gameMode, targetSpeed]);
   
   const resetGameStats = useCallback(() => {
     clearTimers();
     setTargets([]); setScore(0); setHits(0); setMisses(0);
-    setTimeLeft(gameMode === 'recoil' ? TOTAL_RECOIL_DURATION : GAME_DURATION); 
+    setTimeLeft(gameDuration); 
     setCountdown(3);
     setHitTimes([]); setMissData([]);
-    setSprayDataHorizontal([]); setSprayDataVertical([]);
-    setCurrentSprayPoints([]); 
-    setRecoilControlScoreHorizontal(0); setRecoilControlScoreVertical(0);
+    setCurrentCombo(0); setMaxCombo(0);
+    // Recoil
+    setIsTracking(false);
+    setCrosshairPath([]);
+    setTrackingScore(0);
+    setTrackingSamples(0);
     setRecoilTargetPosition(null);
-    setRecoilRound(null);
-  }, [clearTimers, gameMode]);
+  }, [clearTimers, gameDuration]);
 
   const startGame = useCallback(() => {
     resetGameStats();
-    if (gameMode === 'recoil') {
-        setRecoilRound('horizontal');
-    }
     setGameState('countdown');
     countdownTimerRef.current = window.setInterval(() => setCountdown(prev => prev - 1), 1000);
-  }, [resetGameStats, gameMode]);
+  }, [resetGameStats]);
 
   useEffect(() => {
     if (gameState === 'countdown' && countdown <= 0) {
@@ -191,24 +197,79 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     return () => { if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current); };
   }, [gameState, gameMode]);
 
+  // Recoil Mode Game Loop
+  useEffect(() => {
+    if (gameState !== 'playing' || gameMode !== 'recoil') return;
+    
+    let gameStartTime = performance.now();
+    const activePattern = RECOIL_PATTERNS[selectedPattern]?.pattern || [];
+    
+    const loop = () => {
+        if (!gameAreaRef.current) {
+            animationFrameRef.current = requestAnimationFrame(loop);
+            return;
+        };
+
+        const elapsedTime = performance.now() - gameStartTime;
+        const patternIndex = Math.floor(elapsedTime / SPRAY_INTERVAL);
+
+        if (patternIndex >= activePattern.length) { // End of pattern
+            setRecoilTargetPosition(prev => prev);
+        } else {
+            const rect = gameAreaRef.current.getBoundingClientRect();
+            const center = { x: rect.width / 2, y: rect.height / 2 };
+            const recoilOffset = activePattern[patternIndex];
+            
+            const targetPos = { x: center.x + recoilOffset.x, y: center.y + recoilOffset.y };
+            setRecoilTargetPosition(targetPos);
+
+            if (isTracking && mousePositionRef.current) {
+                const userMouseRelative = {
+                    x: mousePositionRef.current.x - rect.left,
+                    y: mousePositionRef.current.y - rect.top
+                };
+                
+                const crosshairPointForPath = {
+                    x: userMouseRelative.x - center.x,
+                    y: userMouseRelative.y - center.y,
+                };
+
+                const errorDistance = Math.sqrt(Math.pow(userMouseRelative.x - targetPos.x, 2) + Math.pow(userMouseRelative.y - targetPos.y, 2));
+                const pointScore = Math.max(0, 100 - errorDistance);
+
+                setCrosshairPath(prev => [...prev, crosshairPointForPath]);
+                setTrackingScore(prev => prev + pointScore);
+                setTrackingSamples(prev => prev + 1);
+            }
+        }
+
+        animationFrameRef.current = requestAnimationFrame(loop);
+    };
+    animationFrameRef.current = requestAnimationFrame(loop);
+    
+    return () => {
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    }
+  }, [gameState, gameMode, isTracking, selectedPattern]);
+
+
   useEffect(() => {
     if (timeLeft <= 0 && gameState === 'playing') {
+        setMaxCombo(prev => Math.max(prev, currentCombo));
         clearTimers();
         setGameState('results');
     }
-    if (gameMode === 'recoil' && timeLeft === RECOIL_ROUND_DURATION && recoilRound === 'horizontal') {
-        setRecoilRound('vertical');
-        setRoundTransition({show: true, text: 'Round 2: Vertical Control'});
-        setTimeout(() => setRoundTransition({show: false, text: ''}), 1500);
-    }
-  }, [timeLeft, gameState, clearTimers, gameMode, recoilRound]);
+  }, [timeLeft, gameState, clearTimers, currentCombo]);
   
   useEffect(() => () => clearTimers(), [clearTimers]);
 
   const handleTargetClick = (targetId: number, spawnTime: number) => {
-    setHitTimes(prev => [...prev, performance.now() - spawnTime]);
+    const timeToHit = performance.now() - spawnTime;
+    setHitTimes(prev => [...prev, timeToHit]);
     setHits(prev => prev + 1);
-    setScore(prev => prev + (gameMode === 'moving' ? 150 : 100));
+    const timeBonus = Math.max(0, 100 - Math.floor(timeToHit / 10));
+    setScore(prev => prev + (gameMode === 'moving' ? 150 : 100) + (currentCombo * 10) + timeBonus);
+    setCurrentCombo(prev => prev + 1);
     setTargets([]);
     spawnTarget();
   };
@@ -223,86 +284,39 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         missOffset = { offsetX: clickX - (target.x + target.size / 2), offsetY: clickY - (target.y + target.size / 2) };
     }
     setMissData(prev => [...prev, missOffset]);
+
+    setMaxCombo(prev => Math.max(prev, currentCombo));
+    setCurrentCombo(0);
+
     setMisses(prev => prev + 1);
     setScore(prev => Math.max(0, prev - 25));
   };
   
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    mousePositionRef.current = { x: e.clientX, y: e.clientY };
+    if (gameAreaRef.current) {
+        mousePositionRef.current = { x: e.clientX, y: e.clientY };
+    }
   }, []);
 
-  const handleSprayStart = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (gameState !== 'playing' || !gameAreaRef.current || sprayIntervalRef.current) return;
-    
+  const handleTrackStart = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (gameState !== 'playing' || !gameAreaRef.current) return;
     document.addEventListener('mousemove', handleMouseMove);
     mousePositionRef.current = { x: e.clientX, y: e.clientY };
-    sprayStartTimeRef.current = performance.now();
-    
-    sprayIntervalRef.current = window.setInterval(() => {
-        if (!sprayStartTimeRef.current || !mousePositionRef.current || !gameAreaRef.current || !recoilRound) return;
-
-        const elapsedTime = performance.now() - sprayStartTimeRef.current;
-        const bulletIndex = Math.floor(elapsedTime / SPRAY_INTERVAL);
-        const activePattern = getActivePattern(recoilRound);
-
-        if (bulletIndex >= activePattern.length) {
-            handleSprayEnd();
-            return;
-        }
-
-        const rect = gameAreaRef.current.getBoundingClientRect();
-        const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-        const recoilOffset = activePattern[bulletIndex];
-        
-        // Target moves with recoil
-        const targetAbsolutePos = { x: center.x + recoilOffset.x, y: center.y + recoilOffset.y };
-        setRecoilTargetPosition({ x: targetAbsolutePos.x - rect.left, y: targetAbsolutePos.y - rect.top });
-        
-        // User tries to track the target
-        const userAbsolutePos = mousePositionRef.current;
-        const errorDistance = Math.sqrt(Math.pow(userAbsolutePos.x - targetAbsolutePos.x, 2) + Math.pow(userAbsolutePos.y - targetAbsolutePos.y, 2));
-        const pointScore = Math.max(0, Math.floor(100 - errorDistance * 2)); // Higher penalty for distance
-
-        const userSprayPoint = {
-            offsetX: userAbsolutePos.x - center.x,
-            offsetY: userAbsolutePos.y - center.y
-        };
-
-        if (recoilRound === 'horizontal') {
-            setSprayDataHorizontal(prev => [...prev, userSprayPoint]);
-            setRecoilControlScoreHorizontal(prev => prev + pointScore);
-        } else {
-            setSprayDataVertical(prev => [...prev, userSprayPoint]);
-            setRecoilControlScoreVertical(prev => prev + pointScore);
-        }
-
-        setCurrentSprayPoints(prev => [...prev, {
-            id: Date.now() + Math.random(),
-            x: userAbsolutePos.x - rect.left,
-            y: userAbsolutePos.y - rect.top,
-        }]);
-
-    }, SPRAY_INTERVAL);
+    trackStartTimeRef.current = performance.now();
+    setIsTracking(true);
   };
 
-  const handleSprayEnd = () => {
+  const handleTrackEnd = () => {
     document.removeEventListener('mousemove', handleMouseMove);
-    if (sprayIntervalRef.current) clearInterval(sprayIntervalRef.current);
-    sprayIntervalRef.current = null;
-    sprayStartTimeRef.current = null;
+    setIsTracking(false);
+    trackStartTimeRef.current = null;
     mousePositionRef.current = null;
-    setRecoilTargetPosition(null);
-    setTimeout(() => setCurrentSprayPoints([]), 500);
   };
   
   const avgHitTime = hitTimes.length > 0 ? hitTimes.reduce((a, b) => a + b, 0) / hitTimes.length : 0;
   const accuracy = (hits + misses) > 0 ? (hits / (hits + misses)) * 100 : 0;
   
-  const totalShotsHorizontal = sprayDataHorizontal.length;
-  const avgScoreHorizontal = totalShotsHorizontal > 0 ? Math.round(recoilControlScoreHorizontal / totalShotsHorizontal) : 0;
-  const totalShotsVertical = sprayDataVertical.length;
-  const avgScoreVertical = totalShotsVertical > 0 ? Math.round(recoilControlScoreVertical / totalShotsVertical) : 0;
-
+  const trackingAccuracy = trackingSamples > 0 ? Math.round(trackingScore / trackingSamples) : 0;
 
   const renderContent = () => {
     switch (gameState) {
@@ -325,8 +339,54 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
                 <button onClick={() => setGameMode('recoil')} className={`p-6 rounded-lg border-2 transition-all duration-300 ${gameMode === 'recoil' ? 'bg-brand-primary/20 border-brand-primary' : 'bg-brand-panel/50 border-brand-panel hover:border-brand-text-muted'}`}>
                     <Waves size={32} className="mx-auto text-brand-text"/>
                     <h3 className="mt-4 text-xl font-semibold text-brand-text">Recoil Control</h3>
-                    <p className="mt-1 text-sm text-brand-text-muted">Master spray patterns by tracking a recoiling target.</p>
+                    <p className="mt-1 text-sm text-brand-text-muted">Master spray patterns by tracking a moving target.</p>
                 </button>
+                 {gameMode === 'moving' && (
+                  <div className="md:col-span-3 mt-4 animate-fade-in-up">
+                    <h4 className="text-lg font-semibold text-brand-text-muted">Select Target Speed:</h4>
+                    <div className="flex flex-wrap justify-center gap-4 mt-2">
+                      {Object.entries(TARGET_SPEEDS).map(([id, { name, value }]) => (
+                        <button
+                          key={id}
+                          onClick={() => setTargetSpeed(value)}
+                          className={`px-4 py-2 rounded-lg border-2 font-semibold transition-all duration-200 ${targetSpeed === value ? 'bg-brand-secondary border-brand-secondary text-white' : 'bg-brand-panel border-brand-panel text-brand-text-muted hover:border-brand-text-muted'}`}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                 {gameMode === 'recoil' && (
+                  <div className="md:col-span-3 mt-4 animate-fade-in-up">
+                    <h4 className="text-lg font-semibold text-brand-text-muted">Select Recoil Pattern:</h4>
+                    <div className="flex flex-wrap justify-center gap-4 mt-2">
+                      {Object.entries(RECOIL_PATTERNS).map(([id, { name }]) => (
+                        <button
+                          key={id}
+                          onClick={() => setSelectedPattern(id)}
+                          className={`px-4 py-2 rounded-lg border-2 font-semibold transition-all duration-200 ${selectedPattern === id ? 'bg-brand-secondary border-brand-secondary text-white' : 'bg-brand-panel border-brand-panel text-brand-text-muted hover:border-brand-text-muted'}`}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="md:col-span-3 mt-4 animate-fade-in-up">
+                    <h4 className="text-lg font-semibold text-brand-text-muted">Select Duration:</h4>
+                    <div className="flex flex-wrap justify-center gap-4 mt-2">
+                      {DURATION_OPTIONS.map((duration) => (
+                        <button
+                          key={duration}
+                          onClick={() => setGameDuration(duration)}
+                          className={`px-6 py-2 rounded-lg border-2 font-semibold transition-all duration-200 ${gameDuration === duration ? 'bg-brand-secondary border-brand-secondary text-white' : 'bg-brand-panel border-brand-panel text-brand-text-muted hover:border-brand-text-muted'}`}
+                        >
+                          {duration}s
+                        </button>
+                      ))}
+                    </div>
+                </div>
             </div>
             <button onClick={startGame} className="mt-8 flex items-center justify-center mx-auto px-8 py-4 bg-brand-primary text-black rounded-lg hover:bg-cyan-300 transition-colors duration-300 font-semibold text-xl transform hover:-translate-y-1">
               <Play size={24} className="mr-2" />Begin Simulation
@@ -342,38 +402,26 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
             <p className="text-center text-brand-text-muted mt-1">Mode: <span className="font-semibold text-brand-primary">{gameMode === 'static' ? 'Static Clicking' : gameMode === 'moving' ? 'Dynamic Tracking' : 'Recoil Control'}</span></p>
             {gameMode === 'recoil' ? (
                 <div className="mt-6 space-y-8">
-                    {/* Horizontal Results */}
                     <div className="bg-brand-bg/30 p-4 sm:p-6 rounded-lg border border-brand-panel">
-                        <h3 className="text-2xl font-semibold text-brand-primary mb-4 text-center">Horizontal Control Results</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center mb-6">
-                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><TargetIcon size={14} className="mr-2"/>Avg. Precision</h3><p className="text-3xl font-bold text-brand-text mt-1">{avgScoreHorizontal}<span className="text-lg">%</span></p></div>
-                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><MousePointerClick size={14} className="mr-2"/>Shots Tracked</h3><p className="text-3xl font-bold text-brand-text mt-1">{totalShotsHorizontal}</p></div>
+                        <h3 className="text-2xl font-semibold text-brand-primary mb-4 text-center">
+                            {RECOIL_PATTERNS[selectedPattern]?.name || 'Recoil'} Control Results
+                        </h3>
+                         <div className="grid grid-cols-1 gap-4 text-center mb-6 max-w-xs mx-auto">
+                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><TargetIcon size={14} className="mr-2"/>Tracking Accuracy</h3><p className="text-3xl font-bold text-brand-text mt-1">{trackingAccuracy}<span className="text-lg">%</span></p></div>
                         </div>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel h-[350px]"><MissScatterPlot misses={sprayDataHorizontal} targetSize={RECOIL_TARGET_SIZE*2} title="Your Tracking Pattern"/></div>
-                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel h-[350px]"><RecoilPatternDisplay pattern={HORIZONTAL_RECOIL_PATTERN} title="Target Path" /></div>
-                        </div>
-                    </div>
-                     {/* Vertical Results */}
-                    <div className="bg-brand-bg/30 p-4 sm:p-6 rounded-lg border border-brand-panel">
-                        <h3 className="text-2xl font-semibold text-brand-primary mb-4 text-center">Vertical Control Results</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center mb-6">
-                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><TargetIcon size={14} className="mr-2"/>Avg. Precision</h3><p className="text-3xl font-bold text-brand-text mt-1">{avgScoreVertical}<span className="text-lg">%</span></p></div>
-                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><MousePointerClick size={14} className="mr-2"/>Shots Tracked</h3><p className="text-3xl font-bold text-brand-text mt-1">{totalShotsVertical}</p></div>
-                        </div>
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel h-[350px]"><MissScatterPlot misses={sprayDataVertical} targetSize={RECOIL_TARGET_SIZE*2} title="Your Tracking Pattern"/></div>
-                            <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel h-[350px]"><RecoilPatternDisplay pattern={VERTICAL_RECOIL_PATTERN} title="Target Path" /></div>
+                        <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel h-[350px]">
+                            <RecoilPatternDisplay pattern={RECOIL_PATTERNS[selectedPattern]?.pattern || []} userPattern={crosshairPath} title="Target Path vs. Your Crosshair" />
                         </div>
                     </div>
                 </div>
             ) : (
               <>
-                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 text-center">
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><TargetIcon size={14} className="mr-2"/>Final Score</h3><p className="text-3xl font-bold text-brand-text mt-1">{score}</p></div>
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><Percent size={14} className="mr-2"/>Accuracy</h3><p className="text-3xl font-bold text-brand-text mt-1">{accuracy.toFixed(1)}%</p></div>
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><Timer size={14} className="mr-2"/>Avg. Time-to-Hit</h3><p className="text-3xl font-bold text-brand-text mt-1">{avgHitTime.toFixed(0)}<span className="text-lg">ms</span></p></div>
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><MousePointerClick size={14} className="mr-2"/>Hits / Misses</h3><p className="text-3xl font-bold text-brand-text mt-1">{hits} / {misses}</p></div>
+                  <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><Flame size={14} className="mr-2 text-orange-400"/>Highest Combo</h3><p className="text-3xl font-bold text-brand-text mt-1">{maxCombo}x</p></div>
                 </div>
                 <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel h-[350px]"><HitTimeChart hitTimes={hitTimes} avgHitTime={avgHitTime} /></div>
@@ -395,7 +443,7 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   
   const isPlaying = gameState === 'playing' || gameState === 'countdown';
   const gameAreaHandlers = gameMode === 'recoil'
-    ? { onMouseDown: handleSprayStart, onMouseUp: handleSprayEnd, onMouseLeave: handleSprayEnd }
+    ? { onMouseDown: handleTrackStart, onMouseUp: handleTrackEnd, onMouseLeave: handleTrackEnd }
     : { onMouseDown: handleMiss };
 
   return (
@@ -406,18 +454,31 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
             <div className="w-full p-4 sm:p-6">{renderContent()}</div>
           ) : (
              <div className={`w-full relative cursor-crosshair ${isPlaying ? 'h-screen' : 'h-[85vh]'}`}>
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-full max-w-md flex justify-around text-brand-text p-2 bg-black/30 rounded-lg text-lg font-semibold z-10">
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 w-full max-w-lg flex justify-around items-center text-brand-text p-2 bg-black/30 rounded-lg text-lg font-semibold z-10">
                 <span>Time: {timeLeft}s</span>
-                {gameMode === 'recoil' ? <span>Round: <span className="text-brand-primary capitalize">{recoilRound}</span></span> : <><span>Score: {score}</span><span>Acc: {accuracy.toFixed(1)}%</span></>}
+                {gameMode === 'recoil' ? (
+                    <span>Accuracy: <span className="text-brand-primary capitalize">{trackingAccuracy}%</span></span>
+                ) : (
+                    <>
+                        <span>Score: {score}</span>
+                        <span key={currentCombo} className={`text-yellow-400 font-bold min-w-[120px] text-center ${currentCombo > 1 ? 'animate-pop-in' : ''}`}>
+                            {currentCombo > 1 && `${currentCombo}x Combo`}
+                        </span>
+                        <span>Acc: {accuracy.toFixed(1)}%</span>
+                    </>
+                )}
               </div>
 
-              {roundTransition.show && <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-20"><span className="text-5xl font-bold text-white animate-fade-in-up">{roundTransition.text}</span></div>}
-
               <div ref={gameAreaRef} className="w-full h-full bg-brand-bg/50 overflow-hidden" {...gameAreaHandlers}>
-                {recoilTargetPosition && (
-                    <div className="absolute rounded-full bg-brand-primary border-2 border-cyan-200 -translate-x-1/2 -translate-y-1/2" style={{ left: recoilTargetPosition.x, top: recoilTargetPosition.y, width: RECOIL_TARGET_SIZE, height: RECOIL_TARGET_SIZE, boxShadow: '0 0 15px 0px #22d3ee' }} />
+                {gameMode === 'recoil' && (
+                    <>
+                        <div className="absolute w-2 h-2 bg-white/50 rounded-full -translate-x-1/2 -translate-y-1/2" style={{ left: '50%', top: '50%' }} />
+                        {recoilTargetPosition && (
+                            <div className="absolute rounded-full bg-brand-primary border-2 border-cyan-200 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: recoilTargetPosition.x, top: recoilTargetPosition.y, width: RECOIL_TARGET_SIZE, height: RECOIL_TARGET_SIZE, boxShadow: '0 0 15px 0px #22d3ee' }} />
+                        )}
+                    </>
                 )}
-                {currentSprayPoints.map(p => <div key={p.id} className="absolute w-2 h-2 bg-yellow-300 rounded-full -translate-x-1/2 -translate-y-1/2 animate-destroy-target" style={{ left: p.x, top: p.y }} />)}
+                
                 {targets.map(target => (
                   <div key={target.id} className="absolute rounded-full bg-lime-400 border-2 border-lime-200 cursor-crosshair" style={{ left: target.x, top: target.y, width: target.size, height: target.size, boxShadow: '0 0 15px 0px #a3e635', animation: gameState === 'playing' && gameMode === 'static' ? 'spawn-target 0.2s ease-out forwards' : 'none' }}
                     onMouseDown={(e) => { e.stopPropagation(); handleTargetClick(target.id, target.spawnTime); }}/>

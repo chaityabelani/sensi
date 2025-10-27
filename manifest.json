@@ -1,6 +1,6 @@
 {
-  "short_name": "Sense_AI",
-  "name": "Game_Sense_AI",
+  "short_name": "Game Sensei",
+  "name": "Game Sensei",
   "description": "An AI-powered application to help gamers analyze their in-game sensitivity and aim by analyzing screen recordings.",
   "icons": [
     {

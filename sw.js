@@ -1,4 +1,4 @@
-const CACHE_NAME = 'game-sense-ai-v1';
+const CACHE_NAME = 'game-sensei-v1';
 const urlsToCache = [
   '/',
   '/index.html',

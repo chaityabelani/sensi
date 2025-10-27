@@ -9,7 +9,7 @@ interface HomeProps {
 const Home: React.FC<HomeProps> = ({ onStartPractice }) => {
   return (
     <div className="text-center">
-      <h2 className="text-4xl font-bold tracking-tighter text-brand-text sm:text-5xl">Welcome, Operator</h2>
+      <h2 className="text-4xl font-bold tracking-tighter text-brand-text sm:text-5xl">Welcome to Game Sensei</h2>
       <p className="mt-4 text-lg leading-8 text-brand-text-muted max-w-2xl mx-auto">
         Your performance is critical. Enter the simulation to sharpen your skills.
       </p>

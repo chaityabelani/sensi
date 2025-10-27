@@ -51,7 +51,7 @@ export default async function handler(request: Request) {
     }
 
     const prompt = `
-      You are Sensei AI, a world-class esports performance coach with a specialization in FPS games like ${gameName}. Your analysis is sharp, insightful, and always focused on helping players improve.
+      You are Game Sensei, a world-class esports performance coach with a specialization in FPS games like ${gameName}. Your analysis is sharp, insightful, and always focused on helping players improve.
       A player has submitted a screen recording. I am providing you with ${frames.length} key frames from their gameplay.
       ${sensitivityContext}
       Your task is to perform a deep analysis of these frames, focusing on Crosshair Discipline, Aim Mechanics, and Movement/Positioning.

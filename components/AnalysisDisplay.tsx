@@ -41,7 +41,7 @@ const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ analysis, game, onRes
                 <div className="w-16 h-16 flex items-center justify-center text-brand-primary">{game.logo}</div>
                 <div>
                   <h2 className="text-3xl font-bold text-brand-text tracking-tighter">Debriefing Report</h2>
-                  <p className="text-brand-text-muted flex items-center space-x-2"><Bot size={16}/><span>Analysis by Sensei AI</span></p>
+                  <p className="text-brand-text-muted flex items-center space-x-2"><Bot size={16}/><span>Analysis by Game Sensei</span></p>
                 </div>
             </div>
           <button
