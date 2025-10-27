@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Video, UploadCloud, ArrowLeft, Lightbulb, Focus, Clock, Target, Play } from 'lucide-react';
+import { Video, UploadCloud, ArrowLeft, Lightbulb, Focus, Clock, Target, Play, X } from 'lucide-react';
 
 interface ScreenRecorderProps {
   onRecordingComplete: (blob: Blob, sensitivity: number | null) => void;
@@ -7,10 +7,18 @@ interface ScreenRecorderProps {
   gameName: string;
 }
 
+const SENSITIVITY_PRESETS: Record<string, { label: string; value: string }> = {
+  low: { label: 'Low', value: '0.20' },
+  medium: { label: 'Medium', value: '0.40' },
+  high: { label: 'High', value: '0.80' },
+};
+
+
 const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, onBack, gameName }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [sensitivity, setSensitivity] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -82,6 +90,26 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
       onRecordingComplete(file, getSensitivity());
     }
   };
+  
+  const handlePresetClick = (presetKey: string) => {
+    const preset = SENSITIVITY_PRESETS[presetKey];
+    setSensitivity(preset.value);
+    setActivePreset(presetKey);
+  };
+  
+  const handleClearSensitivity = () => {
+      setSensitivity('');
+      setActivePreset(null);
+  }
+  
+  const handleSensitivityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const { value } = e.target;
+      setSensitivity(value);
+      const matchingPreset = Object.keys(SENSITIVITY_PRESETS).find(
+        key => SENSITIVITY_PRESETS[key].value === value
+      );
+      setActivePreset(matchingPreset || null);
+  };
 
   return (
     <div className="relative flex flex-col items-center justify-center p-6 sm:p-8 bg-brand-surface/80 backdrop-blur-md rounded-xl shadow-2xl border border-brand-panel max-w-4xl mx-auto w-full">
@@ -111,11 +139,37 @@ const ScreenRecorder: React.FC<ScreenRecorderProps> = ({ onRecordingComplete, on
                   name="sensitivity"
                   id="sensitivity"
                   value={sensitivity}
-                  onChange={(e) => setSensitivity(e.target.value)}
+                  onChange={handleSensitivityChange}
                   className="bg-brand-bg border border-brand-panel text-brand-text text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-3 placeholder-brand-text-muted/50"
                   placeholder="e.g., 0.45"
                   step="0.01"
               />
+               <div className="mt-3 flex flex-wrap items-center gap-2">
+                {Object.entries(SENSITIVITY_PRESETS).map(([key, { label }]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handlePresetClick(key)}
+                    className={`px-3 py-1 text-xs font-semibold rounded-full transition-colors border ${
+                      activePreset === key 
+                      ? 'bg-brand-secondary/20 border-brand-secondary text-brand-secondary' 
+                      : 'bg-brand-panel border-transparent text-brand-text-muted hover:bg-slate-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                {sensitivity && (
+                  <button 
+                    type="button"
+                    onClick={handleClearSensitivity}
+                    className="flex items-center justify-center h-6 w-6 rounded-full bg-brand-panel text-brand-text-muted hover:bg-red-900/50 hover:text-red-400 transition-colors"
+                    aria-label="Clear sensitivity"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
             
             <div className="w-full bg-brand-bg/50 rounded-lg border border-brand-panel p-4 text-left">

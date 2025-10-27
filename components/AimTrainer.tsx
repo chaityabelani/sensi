@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, RefreshCw, Target as TargetIcon, Timer, MousePointerClick, Percent, Move, Waves, Flame } from 'lucide-react';
+import { ArrowLeft, Play, RefreshCw, Target as TargetIcon, Timer, MousePointerClick, Percent, Move, Waves, Flame, Bot, X } from 'lucide-react';
 import HitTimeChart from './HitTimeChart';
 import MissScatterPlot from './MissScatterPlot';
 import HitTimeDistributionChart from './HitTimeDistributionChart';
@@ -33,6 +33,12 @@ const TARGET_SIZE = 50; // pixels
 const RECOIL_TARGET_SIZE = 30;
 const SPRAY_INTERVAL = 80; // ms between "shots" - now used for pattern timing
 const DURATION_OPTIONS = [20, 30, 60, 90, 120];
+
+const SENSITIVITY_PRESETS: Record<string, { label: string; value: string }> = {
+  low: { label: 'Low', value: '0.20' },
+  medium: { label: 'Medium', value: '0.40' },
+  high: { label: 'High', value: '0.80' },
+};
 
 const TARGET_SPEEDS: Record<string, { name: string; value: number }> = {
     slow: { name: 'Slow', value: 2 },
@@ -76,6 +82,59 @@ const RECOIL_PATTERNS: Record<string, { name: string; pattern: {x: number, y: nu
     },
 };
 
+const getSenseiObservation = (
+    sensitivity: string,
+    missData: MissData[],
+    accuracy: number
+  ): string => {
+    const sens = parseFloat(sensitivity);
+    if (isNaN(sens)) {
+      return "Enter your sensitivity before the session to receive personalized feedback on your aim patterns.";
+    }
+
+    if (accuracy > 97) {
+      return "Exceptional accuracy! Your sensitivity appears to be perfectly dialed in for this challenge. Keep up the great work.";
+    }
+
+    if (missData.length < 5) {
+      return "There's not enough miss data to provide a detailed analysis. Try another session and we'll see what we can learn!";
+    }
+
+    const avgOffsetX = missData.reduce((sum, miss) => sum + miss.offsetX, 0) / missData.length;
+    
+    // Check for horizontal bias
+    const horizontalBiasThreshold = TARGET_SIZE * 0.3; // Misses are on average 30% of target size to one side
+    if (Math.abs(avgOffsetX) > horizontalBiasThreshold) {
+      const direction = avgOffsetX > 0 ? "right" : "left";
+      const correctiveDirection = avgOffsetX > 0 ? "left" : "right";
+      
+      if (sens > 0.6) {
+        return `You consistently missed to the ${direction}, suggesting you're over-aiming. Your sensitivity might be too high. Try lowering it by 10-15% to improve fine control.`;
+      } else if (sens < 0.25) {
+        return `Your misses are clustered to the ${direction}. With a low sensitivity, this might mean you're struggling to catch up to targets. Consider a small increase to make flicks feel less strenuous.`;
+      } else {
+        return `There's a noticeable pattern of misses to the ${direction}. This indicates an aiming bias. Focus on centering your aim by consciously pulling slightly to the ${correctiveDirection} as you acquire a target.`;
+      }
+    }
+    
+    // Check for vertical bias
+    const avgOffsetY = missData.reduce((sum, miss) => sum + miss.offsetY, 0) / missData.length;
+    const verticalBiasThreshold = TARGET_SIZE * 0.3;
+     if (Math.abs(avgOffsetY) > verticalBiasThreshold) {
+      const direction = avgOffsetY > 0 ? "below" : "above"; // Y is inverted on screens, but my offset calc is correct (clickY - targetCenterY). So positive is down.
+      if (sens > 0.6) {
+         return `You have a tendency to miss ${direction} the target. This often happens with high sensitivity where small vertical movements are exaggerated. A slight reduction could help stabilize your vertical aim.`;
+      } else {
+         return `Your misses are frequently ${direction} the target. Ensure your posture and wrist position are consistent. This type of pattern can sometimes be ergonomic rather than purely a sensitivity issue.`;
+      }
+    }
+
+    if (accuracy < 85) {
+      return "Your misses are scattered, indicating general inconsistency. This could mean your sensitivity is in a range that you haven't built muscle memory for yet. Consistent practice is key. Focus on smooth mouse movements rather than jerky flicks.";
+    }
+
+    return "Your performance is solid. Your sensitivity seems to be in a good range. Continue practicing to build even stronger muscle memory and push your scores higher!";
+};
 
 const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const [gameState, setGameState] = useState<'idle' | 'countdown' | 'playing' | 'results'>('idle');
@@ -104,6 +163,8 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(gameDuration);
   const [countdown, setCountdown] = useState(3);
+  const [sensitivity, setSensitivity] = useState('');
+  const [activePreset, setActivePreset] = useState<string | null>(null);
   
   // Refs
   const gameAreaRef = useRef<HTMLDivElement>(null);
@@ -313,6 +374,26 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
     mousePositionRef.current = null;
   };
   
+  const handlePresetClick = (presetKey: string) => {
+    const preset = SENSITIVITY_PRESETS[presetKey];
+    setSensitivity(preset.value);
+    setActivePreset(presetKey);
+  };
+  
+  const handleClearSensitivity = () => {
+      setSensitivity('');
+      setActivePreset(null);
+  }
+  
+  const handleSensitivityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const { value } = e.target;
+      setSensitivity(value);
+      const matchingPreset = Object.keys(SENSITIVITY_PRESETS).find(
+        key => SENSITIVITY_PRESETS[key].value === value
+      );
+      setActivePreset(matchingPreset || null);
+  };
+
   const avgHitTime = hitTimes.length > 0 ? hitTimes.reduce((a, b) => a + b, 0) / hitTimes.length : 0;
   const accuracy = (hits + misses) > 0 ? (hits / (hits + misses)) * 100 : 0;
   
@@ -324,7 +405,7 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
         return (
           <div className="text-center animate-fade-in-up">
             <h2 className="text-4xl font-bold tracking-tighter text-brand-text sm:text-5xl">Simulation Chamber</h2>
-            <p className="mt-4 text-lg leading-8 text-brand-text-muted max-w-2xl mx-auto">Select a challenge to test your skills.</p>
+            <p className="mt-4 text-lg leading-8 text-brand-text-muted max-w-2xl mx-auto">Select a challenge and configure your settings to begin.</p>
             <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
                 <button onClick={() => setGameMode('static')} className={`p-6 rounded-lg border-2 transition-all duration-300 ${gameMode === 'static' ? 'bg-brand-primary/20 border-brand-primary' : 'bg-brand-panel/50 border-brand-panel hover:border-brand-text-muted'}`}>
                     <MousePointerClick size={32} className="mx-auto text-brand-text"/>
@@ -387,6 +468,50 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
                       ))}
                     </div>
                 </div>
+                <div className="md:col-span-3 mt-6 animate-fade-in-up">
+                    <label htmlFor="sensitivity" className="block text-lg font-semibold text-brand-text-muted mb-2 flex items-center justify-center">
+                        <TargetIcon size={20} className="mr-2 text-brand-secondary" />
+                        In-Game Sensitivity (Optional)
+                    </label>
+                    <div className="max-w-xs mx-auto">
+                        <input
+                            type="number"
+                            name="sensitivity"
+                            id="sensitivity"
+                            value={sensitivity}
+                            onChange={handleSensitivityChange}
+                            className="bg-brand-bg border border-brand-panel text-brand-text text-sm rounded-lg focus:ring-brand-primary focus:border-brand-primary block w-full p-3 placeholder-brand-text-muted/50 text-center"
+                            placeholder="e.g., 0.45"
+                            step="0.01"
+                        />
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                        {Object.entries(SENSITIVITY_PRESETS).map(([key, { label }]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => handlePresetClick(key)}
+                            className={`px-3 py-1 text-xs font-semibold rounded-full transition-colors border ${
+                              activePreset === key 
+                              ? 'bg-brand-secondary/20 border-brand-secondary text-brand-secondary' 
+                              : 'bg-brand-panel border-transparent text-brand-text-muted hover:bg-slate-600'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                        {sensitivity && (
+                          <button 
+                            type="button"
+                            onClick={handleClearSensitivity}
+                            className="flex items-center justify-center h-6 w-6 rounded-full bg-brand-panel text-brand-text-muted hover:bg-red-900/50 hover:text-red-400 transition-colors"
+                            aria-label="Clear sensitivity"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                    </div>
+                </div>
             </div>
             <button onClick={startGame} className="mt-8 flex items-center justify-center mx-auto px-8 py-4 bg-brand-primary text-black rounded-lg hover:bg-cyan-300 transition-colors duration-300 font-semibold text-xl transform hover:-translate-y-1">
               <Play size={24} className="mr-2" />Begin Simulation
@@ -416,13 +541,25 @@ const AimTrainer: React.FC<AimTrainerProps> = ({ onBack }) => {
                 </div>
             ) : (
               <>
-                <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 text-center">
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4 text-center">
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><TargetIcon size={14} className="mr-2"/>Final Score</h3><p className="text-3xl font-bold text-brand-text mt-1">{score}</p></div>
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><Percent size={14} className="mr-2"/>Accuracy</h3><p className="text-3xl font-bold text-brand-text mt-1">{accuracy.toFixed(1)}%</p></div>
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><Timer size={14} className="mr-2"/>Avg. Time-to-Hit</h3><p className="text-3xl font-bold text-brand-text mt-1">{avgHitTime.toFixed(0)}<span className="text-lg">ms</span></p></div>
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><MousePointerClick size={14} className="mr-2"/>Hits / Misses</h3><p className="text-3xl font-bold text-brand-text mt-1">{hits} / {misses}</p></div>
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><Flame size={14} className="mr-2 text-orange-400"/>Highest Combo</h3><p className="text-3xl font-bold text-brand-text mt-1">{maxCombo}x</p></div>
+                  <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel"><h3 className="text-sm font-semibold text-brand-text-muted flex items-center justify-center"><TargetIcon size={14} className="mr-2"/>Sensitivity</h3><p className="text-3xl font-bold text-brand-text mt-1">{sensitivity || 'N/A'}</p></div>
                 </div>
+                
+                 <div className="mt-8 bg-brand-bg/30 p-4 sm:p-6 rounded-lg border border-brand-panel border-l-4 border-l-brand-secondary">
+                    <h3 className="text-xl font-semibold text-brand-text mb-3 flex items-center">
+                        <Bot size={20} className="mr-3 text-brand-secondary" />
+                        Sensei's Observation
+                    </h3>
+                    <p className="text-brand-text-muted">
+                        {getSenseiObservation(sensitivity, missData, accuracy)}
+                    </p>
+                </div>
+                
                 <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel h-[350px]"><HitTimeChart hitTimes={hitTimes} avgHitTime={avgHitTime} /></div>
                   <div className="bg-brand-bg/50 p-4 rounded-lg border border-brand-panel h-[350px]"><MissScatterPlot misses={missData} targetSize={TARGET_SIZE} title="Miss Distribution" /></div>
